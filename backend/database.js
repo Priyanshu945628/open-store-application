@@ -269,7 +269,7 @@ export async function initDb() {
 export async function createUser(username, password, email = "") {
   try {
     const avatar = '';
-    const isVerified = email ? 0 : 1;
+    const isVerified = 1;
     const result = await db.run(
       'INSERT INTO users (username, password, avatar, email, is_verified) VALUES (?, ?, ?, ?, ?)',
       [username, password, avatar, email, isVerified]

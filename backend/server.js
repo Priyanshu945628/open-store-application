@@ -153,13 +153,6 @@ app.post('/api/auth/register', async (req, res) => {
   }
   try {
     const user = await createUser(username, password, email);
-    if (email) {
-      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-      const otpExpires = Date.now() + 5 * 60 * 1000;
-      await updateUserOtp(user.id, otpCode, otpExpires);
-      await sendOtpEmail(email, otpCode);
-      return res.json({ requireOTP: true, userId: user.id });
-    }
     res.json(user);
   } catch (error) {
     console.error('[Register Error]', error);
@@ -177,13 +170,6 @@ app.post('/api/auth/login', async (req, res) => {
   }
   try {
     const user = await loginUser(username, password);
-    if (user.email) {
-      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-      const otpExpires = Date.now() + 5 * 60 * 1000;
-      await updateUserOtp(user.id, otpCode, otpExpires);
-      await sendOtpEmail(user.email, otpCode);
-      return res.json({ requireOTP: true, userId: user.id });
-    }
     if (user.totp_enabled) {
       return res.json({ require2FA: true, userId: user.id });
     }
