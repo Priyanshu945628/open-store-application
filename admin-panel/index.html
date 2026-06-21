@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Open Store - Admin Control Console</title>
+  <link rel="stylesheet" href="admin.css">
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+</head>
+<body class="cyber-theme">
+  <!-- Matrix Background Canvas -->
+  <canvas id="matrix-canvas"></canvas>
+
+  <!-- Login Shield Container -->
+  <div id="login-container" class="cyber-panel">
+    <div class="panel-header">
+      <span class="terminal-symbol">&gt;_</span>
+      <h2>SECURE GATEWAY AUTHENTICATION</h2>
+    </div>
+    <div class="panel-body">
+      <p class="security-warning">
+        WARNING: UNAUTHORIZED ACCESS TO THIS PROTOCOL IS STRICTLY PROHIBITED. IP BANS IN EFFECT AFTER 3 CONSECUTIVE FAILURE CYCLES.
+      </p>
+      
+      <div id="login-error" class="error-box hidden"></div>
+
+      <form id="login-form">
+        <div class="form-group">
+          <label for="admin-email">SECURE IDENTIFIER (EMAIL)</label>
+          <input type="email" id="admin-email" placeholder="admin@openstore.dev" required autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label for="admin-password">CRYPTOGRAPHIC PASSCODE</label>
+          <input type="password" id="admin-password" placeholder="••••••••" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="cyber-btn" id="login-btn">DECRYPT ACCESS SHIELD</button>
+      </form>
+    </div>
+    <div class="panel-footer">
+      <span>SHIELD CORE v1.0.4</span>
+      <span id="gateway-status">ONLINE</span>
+    </div>
+  </div>
+
+  <!-- Main Dashboard Container (Initially Hidden) -->
+  <div id="dashboard-container" class="cyber-panel hidden">
+    <div class="panel-header dashboard-header">
+      <div class="header-brand">
+        <span class="terminal-symbol">&gt;_</span>
+        <h2>ADMIN CONTROL CONSOLE</h2>
+      </div>
+      <div class="header-status">
+        <span class="status-indicator-dot green"></span>
+        <span id="admin-session-user">SYSTEM: ROOT</span>
+        <button id="logout-btn" class="text-btn">SHUTDOWN SESSION</button>
+      </div>
+    </div>
+
+    <!-- Top Grid Stats -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <span class="stat-label">TOTAL INDEXED USERS</span>
+        <span class="stat-value" id="stat-total-users">0</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">ACTIVE BANNED IPS</span>
+        <span class="stat-value text-red" id="stat-banned-ips">0</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">MITM PROTECTION</span>
+        <span class="stat-value text-green">SHIELD ON</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">CORE LATENCY</span>
+        <span class="stat-value" id="stat-latency">--ms</span>
+      </div>
+    </div>
+
+    <div class="dashboard-body">
+      <!-- Sidebar Navigation -->
+      <aside class="dashboard-tabs">
+        <button class="tab-btn active" data-tab="users-tab">
+          <span class="tab-number">01.</span> MEMBERS DIRECTORY
+        </button>
+        <button class="tab-btn" data-tab="bans-tab">
+          <span class="tab-number">02.</span> IP REVOCATION
+        </button>
+        <button class="tab-btn" data-tab="logs-tab">
+          <span class="tab-number">03.</span> SECURITY AUDIT LOGS
+        </button>
+        <button class="tab-btn" data-tab="support-tab">
+          <span class="tab-number">04.</span> SUPPORT TICKETS
+        </button>
+      </aside>
+
+      <!-- Main Contents Area -->
+      <main class="dashboard-content">
+        <!-- Users Tab -->
+        <section id="users-tab" class="tab-panel active">
+          <h3>MEMBERS VAULT LOG</h3>
+          <p class="panel-desc">Direct view of user profile registry parameters fetched securely from the SQLite core database.</p>
+          <div class="table-container">
+            <table class="cyber-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>AVATAR</th>
+                  <th>USERNAME</th>
+                  <th>DEVELOPMENT NICHE</th>
+                  <th>TAG</th>
+                  <th>SOCIAL</th>
+                  <th>OPERATIONS</th>
+                </tr>
+              </thead>
+              <tbody id="users-table-body">
+                <tr>
+                  <td colspan="7" class="text-center">Querying database registry...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Bans Tab -->
+        <section id="bans-tab" class="tab-panel">
+          <h3>IP BLOCKLIST REGISTRY</h3>
+          <p class="panel-desc">Active IP addresses permanently blacklisted from all backend APIs and frontend workspace gateways.</p>
+          <div class="table-container">
+            <table class="cyber-table">
+              <thead>
+                <tr>
+                  <th>IP ADDRESS</th>
+                  <th>REVOCATION TIMESTAMP</th>
+                  <th>SECURITY OPERATIONS</th>
+                </tr>
+              </thead>
+              <tbody id="bans-table-body">
+                <tr>
+                  <td colspan="3" class="text-center">No banned IP addresses registered.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Audit Logs Tab -->
+        <section id="logs-tab" class="tab-panel">
+          <h3>SECURITY AUDIT MODULE</h3>
+          <p class="panel-desc">Real-time gateway event logging and cryptographic decryption audits.</p>
+          <div class="terminal-box">
+            <div class="terminal-bar">
+              <span class="term-dot"></span>
+              <span class="term-dot"></span>
+              <span class="term-dot"></span>
+              <span class="term-title">terminal_session.sh</span>
+            </div>
+            <div class="terminal-logs" id="terminal-logs-box">
+              <div class="log-line text-green">[INIT] Cryptographic Decryption Shield Core Initialized.</div>
+              <div class="log-line text-green">[INIT] Ready to accept secure dynamic payloads.</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Support Tickets Tab -->
+        <section id="support-tab" class="tab-panel">
+          <h3>USER SUPPORT & FEEDBACK LOG</h3>
+          <p class="panel-desc">List of all user reported errors and requested features collected from the platform feed.</p>
+          <div class="table-container">
+            <table class="cyber-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>USER</th>
+                  <th>TYPE</th>
+                  <th>DESCRIPTION</th>
+                  <th>TIMESTAMP</th>
+                </tr>
+              </thead>
+              <tbody id="support-table-body">
+                <tr>
+                  <td colspan="5" class="text-center">Querying database registry...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="admin.js?v=5"></script>
+</body>
+</html>
