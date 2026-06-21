@@ -1024,6 +1024,26 @@ body.light-theme .landing-signup-btn:hover {
   gap: 14px;
 }
 
+@keyframes messageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin-icon {
+  animation: spin 1s linear infinite;
+}
+
 .chat-message-bubble {
   max-width: 65%;
   padding: 10px 14px;
@@ -1031,6 +1051,11 @@ body.light-theme .landing-signup-btn:hover {
   font-size: 13.5px;
   line-height: 1.45;
   text-align: left;
+  animation: messageSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.chat-message-bubble.sending {
+  opacity: 0.65;
 }
 
 .chat-message-bubble.sent {

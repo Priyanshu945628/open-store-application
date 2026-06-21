@@ -2045,25 +2045,52 @@ export default function App() {
     // Clear typing state on send
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
 
+    const textToSend = newChatText;
+    const fileToSend = chatFile;
+
+    // Create optimistic message
+    const tempMsgId = `temp_${Date.now()}`;
+    const tempMsg = {
+      id: tempMsgId,
+      senderId: user.id,
+      receiverId: selectedContact.id,
+      content: textToSend || null,
+      mediaUrl: fileToSend ? URL.createObjectURL(fileToSend) : null,
+      mediaName: fileToSend ? fileToSend.name : null,
+      createdAt: new Date().toISOString(),
+      isSending: true
+    };
+
+    // Append immediately & clear inputs
+    setChatMessages(prev => [...prev, tempMsg]);
+    setNewChatText('');
+    setChatFile(null);
+
     setSendingChat(true);
     try {
       const formData = new FormData();
       formData.append('senderId', user.id);
       formData.append('receiverId', selectedContact.id);
-      if (newChatText) formData.append('content', newChatText);
-      if (chatFile) formData.append('media', chatFile);
+      if (textToSend) formData.append('content', textToSend);
+      if (fileToSend) formData.append('media', fileToSend);
 
       const res = await fetch(`${API_BASE}/messages`, {
         method: 'POST',
         body: formData
       });
       if (res.ok) {
-        setNewChatText('');
-        setChatFile(null);
-        fetchMessages(true);
+        const sentMsg = await res.json();
+        setChatMessages(prev => 
+          prev.map(m => m.id === tempMsgId ? sentMsg : m)
+        );
+      } else {
+        throw new Error("Failed to send message");
       }
     } catch (err) {
       console.error("Error sending chat message:", err);
+      // Remove optimistic message on failure
+      setChatMessages(prev => prev.filter(m => m.id !== tempMsgId));
+      alert("Failed to send message.");
     } finally {
       setSendingChat(false);
     }
@@ -4359,7 +4386,7 @@ export default function App() {
                       chatMessages.map(msg => (
                         <div 
                           key={msg.id} 
-                          className={`chat-message-bubble ${Number(msg.senderId) === Number(user.id) ? 'sent' : 'received'}`}
+                          className={`chat-message-bubble ${Number(msg.senderId) === Number(user.id) ? 'sent' : 'received'} ${msg.isSending ? 'sending' : ''}`}
                         >
                           {msg.content && <div>{msg.content}</div>}
                           {msg.mediaUrl && (
@@ -4371,15 +4398,24 @@ export default function App() {
                                 const ext = cleanName.split('.').pop().toLowerCase();
                                 const isImg = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext);
                                 const isVid = ['mp4', 'webm', 'mov', 'ogg'].includes(ext);
-                                const downloadUrl = `${BACKEND_BASE}/api/files/download/${encodeURIComponent(msg.mediaUrl)}`;
+                                const downloadUrl = msg.isSending
+                                  ? msg.mediaUrl
+                                  : `${BACKEND_BASE}/api/files/download/${encodeURIComponent(msg.mediaUrl)}`;
                                 if (isImg) return <img src={downloadUrl} style={{ maxWidth: '100%', maxHeight: '250px', borderRadius: 8, objectFit: 'contain' }} alt="Chat media" />;
                                 if (isVid) return <video src={downloadUrl} controls style={{ maxWidth: '100%', maxHeight: '250px', borderRadius: 8 }} />;
                                 return <a href={downloadUrl} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'underline', fontSize: '11px' }} download={msg.mediaName || undefined}>📎 {msg.mediaName || 'attachment'}</a>;
                               })()}
                             </div>
                           )}
-                          <div style={{ fontSize: '9px', opacity: 0.6, marginTop: 4, textAlign: Number(msg.senderId) === Number(user.id) ? 'right' : 'left' }}>
-                            {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          <div style={{ fontSize: '9px', opacity: 0.6, marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: Number(msg.senderId) === Number(user.id) ? 'flex-end' : 'flex-start', gap: '4px' }}>
+                            {msg.isSending ? (
+                              <>
+                                <RefreshCw size={8} className="spin-icon" />
+                                <span>Sending...</span>
+                              </>
+                            ) : (
+                              new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            )}
                           </div>
                         </div>
                       ))
