@@ -723,6 +723,9 @@ export default function App() {
   const [lightboxImage, setLightboxImage] = useState(null);
   const [lightboxScale, setLightboxScale] = useState(1);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [swipingMessageId, setSwipingMessageId] = useState(null);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const touchStartRef = useRef(null);
   const [actionedRequests, setActionedRequests] = useState({});
   const chatLogRef = useRef(null);
   const lastScrolledContactIdRef = useRef(null);
@@ -1245,6 +1248,44 @@ export default function App() {
       }
     }
   }, [profileUserId, currentPanel, user, profileTab, inWorkspace]);
+
+
+  // Mobile Slide-to-reply event handlers
+  const handleTouchStart = (e, msgId) => {
+    const touch = e.touches[0];
+    touchStartRef.current = { id: msgId, x: touch.clientX, y: touch.clientY };
+    setSwipingMessageId(msgId);
+  };
+
+  const handleTouchMove = (e) => {
+    if (!touchStartRef.current || touchStartRef.current.id !== swipingMessageId) return;
+    const touch = e.touches[0];
+    const diffX = touch.clientX - touchStartRef.current.x;
+    const diffY = touch.clientY - touchStartRef.current.y;
+
+    if (Math.abs(diffX) > Math.abs(diffY)) {
+      if (diffX > 0) {
+        if (e.cancelable) e.preventDefault();
+        setSwipeOffset(Math.min(diffX, 80));
+      }
+    }
+  };
+
+  const handleTouchEnd = (e, msg) => {
+    if (touchStartRef.current && touchStartRef.current.id === msg.id) {
+      if (swipeOffset > 50) {
+        setReplyingToMessage(msg);
+        if (navigator.vibrate) {
+          navigator.vibrate(15);
+        }
+      }
+    }
+    setSwipeOffset(0);
+    setTimeout(() => {
+      setSwipingMessageId(null);
+    }, 200);
+    touchStartRef.current = null;
+  };
 
 
   const handleChatScroll = (e) => {
@@ -4583,6 +4624,33 @@ export default function App() {
                           id={`msg-${msg.id}`}
                           className={`chat-message-row ${Number(msg.senderId) === Number(user.id) ? 'sent' : 'received'}`}
                         >
+                          {/* Slide to reply indicator behind the bubble */}
+                          {swipingMessageId === msg.id && swipeOffset > 0 && (
+                            <div 
+                              className="slide-reply-indicator"
+                              style={{
+                                position: 'absolute',
+                                left: '16px',
+                                top: '50%',
+                                transform: `translateY(-50%) scale(${Math.min(swipeOffset / 50, 1.1)})`,
+                                opacity: Math.min(swipeOffset / 50, 1),
+                                color: swipeOffset > 50 ? 'var(--accent-blue)' : 'var(--text-secondary)',
+                                transition: 'color 0.15s ease',
+                                pointerEvents: 'none',
+                                zIndex: 1,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                borderRadius: '50%',
+                                padding: '6px',
+                                border: '1px solid var(--border-color)'
+                              }}
+                            >
+                              <CornerUpLeft size={14} />
+                            </div>
+                          )}
+
                           {Number(msg.senderId) === Number(user.id) && (
                             <button
                               type="button"
@@ -4594,7 +4662,17 @@ export default function App() {
                             </button>
                           )}
                           
-                          <div className={`chat-message-bubble ${Number(msg.senderId) === Number(user.id) ? 'sent' : 'received'} ${msg.isSending ? 'sending' : ''}`}>
+                          <div 
+                            className={`chat-message-bubble ${Number(msg.senderId) === Number(user.id) ? 'sent' : 'received'} ${msg.isSending ? 'sending' : ''}`}
+                            onTouchStart={(e) => handleTouchStart(e, msg.id)}
+                            onTouchMove={handleTouchMove}
+                            onTouchEnd={(e) => handleTouchEnd(e, msg)}
+                            style={{
+                              transform: swipingMessageId === msg.id ? `translateX(${swipeOffset}px)` : 'none',
+                              transition: swipingMessageId === msg.id && swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none',
+                              position: 'relative'
+                            }}
+                          >
                             {msg.replyContent && (
                               <div 
                                 className="chat-message-reply-quote" 

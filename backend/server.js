@@ -423,6 +423,10 @@ app.post('/api/users/:id/update', async (req, res) => {
   }
 });
 
+app.get('/', (req, res) => {
+  res.send('Open Store Backend API is running.');
+});
+
 // Typing Indicator API (in-memory, no WebSocket needed)
 app.post('/api/chat/typing', (req, res) => {
   const { userId, targetUserId } = req.body;
