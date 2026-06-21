@@ -167,7 +167,14 @@ function ShortVideoPlayer({
   );
 }
 
-const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+const getBackendBase = () => {
+  let url = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+  if (url.endsWith('/')) {
+    url = url.slice(0, -1);
+  }
+  return url;
+};
+const BACKEND_BASE = getBackendBase();
 const API_BASE = `${BACKEND_BASE}/api`;
 const NICHE_CATEGORIES = {
   "Coding & Tech": [
