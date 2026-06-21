@@ -18,7 +18,9 @@ function queueDatabaseBackup() {
 }
 
 export async function initDb() {
-  const dbPath = path.join(process.cwd(), 'database.sqlite');
+  const dbPath = process.env.VERCEL 
+    ? path.join('/tmp', 'database.sqlite')
+    : path.join(process.cwd(), 'database.sqlite');
   
   // Try to download existing database from GitHub first
   await downloadDatabase();

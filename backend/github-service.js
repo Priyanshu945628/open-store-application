@@ -10,9 +10,13 @@ const GITHUB_OWNER = process.env.GITHUB_OWNER;
 const GITHUB_REPO = process.env.GITHUB_REPO;
 const MOCK_STORAGE_DIR = path.join(process.cwd(), 'mock-github-storage');
 
-// Ensure mock storage directory exists
-if (!fs.existsSync(MOCK_STORAGE_DIR)) {
-  fs.mkdirSync(MOCK_STORAGE_DIR, { recursive: true });
+const isMock = !GITHUB_TOKEN || !GITHUB_OWNER || !GITHUB_REPO;
+
+// Ensure mock storage directory exists (only if running locally and in mock mode)
+if (isMock && !process.env.VERCEL) {
+  if (!fs.existsSync(MOCK_STORAGE_DIR)) {
+    fs.mkdirSync(MOCK_STORAGE_DIR, { recursive: true });
+  }
 }
 
 /**
@@ -342,7 +346,9 @@ export async function saveChats(chatsList) {
 export async function downloadDatabase() {
   const isMock = !GITHUB_TOKEN || !GITHUB_OWNER || !GITHUB_REPO;
   const filename = 'database.sqlite';
-  const localPath = path.join(process.cwd(), filename);
+  const localPath = process.env.VERCEL 
+    ? path.join('/tmp', filename)
+    : path.join(process.cwd(), filename);
 
   if (isMock) {
     console.log('[Storage Service] Running in mock storage mode. Skipping DB download from GitHub.');
@@ -381,7 +387,9 @@ export async function downloadDatabase() {
 export async function uploadDatabase() {
   const isMock = !GITHUB_TOKEN || !GITHUB_OWNER || !GITHUB_REPO;
   const filename = 'database.sqlite';
-  const localPath = path.join(process.cwd(), filename);
+  const localPath = process.env.VERCEL 
+    ? path.join('/tmp', filename)
+    : path.join(process.cwd(), filename);
 
   if (isMock) {
     return { success: true };
