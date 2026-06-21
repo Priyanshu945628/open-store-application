@@ -347,7 +347,9 @@ export async function initDb() {
   // }
 
   // Initial backup of the database to GitHub
-  await uploadDatabase();
+  if (process.env.VERCEL) {
+    await uploadDatabase();
+  }
 }
 
 // --- User Queries ---
@@ -915,6 +917,13 @@ export async function getNotifications(userId) {
 
 export async function clearNotifications(userId) {
   return db.run('DELETE FROM notifications WHERE userId = ?', [userId]);
+}
+
+export async function deleteMessageNotifications(userId, senderId) {
+  return db.run(
+    "DELETE FROM notifications WHERE userId = ? AND senderId = ? AND type = 'message'",
+    [userId, senderId]
+  );
 }
 
 // --- Banned IPs Helpers ---

@@ -897,12 +897,12 @@ app.post('/api/messages', upload.single('media'), async (req, res) => {
     const recipientSession = activeChatSessions.get(rId);
     const isRecipientLookingAtChat = recipientSession &&
                                      recipientSession.targetUserId === sId &&
-                                     (Date.now() - recipientSession.timestamp < 6000);
+                                     (Date.now() - recipientSession.timestamp < 60000);
 
     const recipientActive = userActivePanels.get(rId);
     const isRecipientInChatTab = recipientActive &&
                                  recipientActive.panel === 'chat' &&
-                                 (Date.now() - recipientActive.timestamp < 10000);
+                                 (Date.now() - recipientActive.timestamp < 60000);
 
     if (!isRecipientLookingAtChat && !isRecipientInChatTab) {
       const { createNotification } = await import('./database.js');
@@ -1262,9 +1262,52 @@ app.post('/api/notifications/clear', async (req, res) => {
   }
 });
 
+app.post('/api/notifications/read-messages', async (req, res) => {
+  const { userId, senderId } = req.body;
+  if (!userId || !senderId) {
+    return res.status(400).json({ error: "userId and senderId are required" });
+  }
+  try {
+    const { deleteMessageNotifications } = await import('./database.js');
+    await deleteMessageNotifications(parseInt(userId), parseInt(senderId));
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error clearing message notifications:", error.message);
+    res.status(500).json({ error: "Server Error" });
+  }
+});
+
 // Admin Portal Integration
 const adminFailedAttempts = new Map();
-const adminActiveSessions = new Set();
+
+// Helper to generate a stateless admin session token
+function generateAdminToken(adminPassword) {
+  const timestamp = Date.now().toString();
+  const signature = crypto.createHmac('sha256', adminPassword)
+                          .update(timestamp)
+                          .digest('hex');
+  return `${timestamp}.${signature}`;
+}
+
+// Helper to verify a stateless admin session token
+function verifyAdminToken(token, adminPassword) {
+  if (!token) return false;
+  const parts = token.split('.');
+  if (parts.length !== 2) return false;
+  const [timestampStr, signature] = parts;
+  const timestamp = parseInt(timestampStr, 10);
+  if (isNaN(timestamp)) return false;
+  
+  // Session valid for 24 hours
+  if (Date.now() - timestamp > 24 * 60 * 60 * 1000) {
+    return false;
+  }
+  
+  const expectedSignature = crypto.createHmac('sha256', adminPassword)
+                                  .update(timestampStr)
+                                  .digest('hex');
+  return signature === expectedSignature;
+}
 
 app.post('/api/admin/login', async (req, res) => {
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -1298,8 +1341,7 @@ app.post('/api/admin/login', async (req, res) => {
 
   // Generate secure session token and cryptographically encrypt validation block
   // This prevents MITM status: true modifications as the client must decrypt the block with the password key
-  const sessionToken = crypto.randomBytes(32).toString('hex');
-  adminActiveSessions.add(sessionToken);
+  const sessionToken = generateAdminToken(adminPassword);
 
   const payloadObj = {
     status: "success",
@@ -1320,7 +1362,8 @@ app.post('/api/admin/login', async (req, res) => {
 // Admin auth check helper
 function requireAdmin(req, res, next) {
   const token = req.headers['x-admin-token'];
-  if (!token || !adminActiveSessions.has(token)) {
+  const adminPassword = process.env.ADMIN_PASSWORD || "SuperSecureAdminPassword2026!";
+  if (!token || !verifyAdminToken(token, adminPassword)) {
     return res.status(401).json({ error: "Unauthorized access: admin session required." });
   }
   next();

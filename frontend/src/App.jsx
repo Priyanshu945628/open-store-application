@@ -1216,6 +1216,37 @@ export default function App() {
     }
   }, [currentPanel, profileTab, user, inWorkspace]);
 
+  // Clear notifications for messages from selected contact when viewing chat
+  useEffect(() => {
+    if (inWorkspace && user && currentPanel === 'chat' && selectedContact) {
+      fetch(`${API_BASE}/notifications/read-messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, senderId: selectedContact.id })
+      })
+      .then(res => {
+        if (res.ok) {
+          fetchNotifications(); // Refresh notifications badge instantly
+        }
+      })
+      .catch(err => console.error("Error marking messages as read:", err));
+    }
+  }, [currentPanel, selectedContact?.id, chatMessages.length, inWorkspace, user]);
+
+  // Safety check: Reset profile tab to 'feed' when viewing another user's profile if it is currently set to private/support tabs
+  useEffect(() => {
+    if (inWorkspace && currentPanel === 'profile' && user) {
+      const targetId = profileUserId || user.id;
+      if (targetId !== user.id) {
+        const publicTabs = ['feed', 'projects', 'analytics', 'followers', 'following'];
+        if (!publicTabs.includes(profileTab)) {
+          setProfileTab('feed');
+        }
+      }
+    }
+  }, [profileUserId, currentPanel, user, profileTab, inWorkspace]);
+
+
   const handleChatScroll = (e) => {
     const container = e.target;
     const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
@@ -3626,7 +3657,7 @@ export default function App() {
             <Settings size={16} />
             <span>Settings</span>
           </div>
-          <div className={`nav-item ${currentPanel === 'profile' && profileTab !== 'settings' ? 'active' : ''}`} onClick={() => { setProfileUserId(user.id); setCurrentPanel('profile'); setProfileTab('feed'); }}>
+          <div className={`nav-item ${currentPanel === 'profile' && profileTab !== 'settings' && profileTab !== 'support' ? 'active' : ''}`} onClick={() => { setProfileUserId(user.id); setCurrentPanel('profile'); setProfileTab('feed'); }}>
             <UserIcon size={16} />
             <span>Profile</span>
           </div>
@@ -3634,7 +3665,7 @@ export default function App() {
             <ShieldCheck size={16} />
             <span>Terms & Policies</span>
           </div>
-          <div className={`nav-item ${currentPanel === 'support' ? 'active' : ''}`} onClick={() => { setCurrentPanel('support'); setProfileUserId(null); }}>
+          <div className={`nav-item ${currentPanel === 'profile' && profileTab === 'support' ? 'active' : ''}`} onClick={() => { setProfileUserId(user.id); setCurrentPanel('profile'); setProfileTab('support'); }}>
             <MessageSquare size={16} />
             <span>Report Error / Request</span>
           </div>
@@ -3643,7 +3674,7 @@ export default function App() {
         {/* Profile Card & Settings Trigger in footer */}
         <div className="profile-card glass-card">
           <div className="profile-footer">
-            <div className="profile-info-block" onClick={() => { setProfileUserId(user.id); setCurrentPanel('profile'); setProfileTab('feed'); }}>
+            <div className="profile-info-block" onClick={() => { setProfileUserId(user.id); setCurrentPanel('profile'); setProfileTab('support'); }}>
               <Avatar username={user.username} src={user.avatar} size={28} className="profile-avatar-small" />
               <div className="profile-meta-small">
                 <span className="profile-username-small">{user.name || `@${user.username}`}</span>
@@ -3681,7 +3712,7 @@ export default function App() {
             {/* Mobile Profile Trigger */}
             <div 
               className="mobile-profile-trigger" 
-              onClick={() => { setProfileUserId(user.id); setCurrentPanel('profile'); setProfileTab('feed'); }}
+              onClick={() => { setProfileUserId(user.id); setCurrentPanel('profile'); setProfileTab('support'); }}
               style={{ cursor: 'pointer', display: 'none', borderRadius: '50%', overflow: 'hidden' }}
             >
               <Avatar username={user.username} src={user.avatar} size={28} />
@@ -5188,100 +5219,7 @@ export default function App() {
           </>
         ) : null}
 
-        {/* --- SUPPORT / FEEDBACK VIEW --- */}
-        {currentPanel === 'support' ? (
-          <div className="glass-card" style={{ padding: '30px', maxWidth: '600px', margin: '20px auto 0 auto', textAlign: 'left' }}>
-            <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '20px', fontWeight: '800', marginBottom: '10px', color: '#fff' }}>
-              🔧 Support & Feedback
-            </h2>
-            <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', lineHeight: '1.6', marginBottom: '24px' }}>
-              Submit an error report or request a new feature. Our administration team will review your ticket.
-            </p>
 
-            {supportSuccess ? (
-              <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '20px', borderRadius: '12px', color: '#10b981', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <strong style={{ fontSize: '15px' }}>✓ Ticket Registered Successfully</strong>
-                <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.7)' }}>Thank you for helping us improve Open Store. Your support ticket has been queued.</span>
-                <button 
-                  className="enter-btn" 
-                  style={{ marginTop: '12px', padding: '10px 20px', fontSize: '12px', background: 'var(--text-primary)', color: '#000', border: 'none', borderRadius: '8px', cursor: 'pointer', alignSelf: 'flex-start' }}
-                  onClick={() => { setSupportSuccess(false); setSupportDesc(''); }}
-                >
-                  Submit Another Ticket
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={handleSupportSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                {supportError && <div style={{ color: '#ef4444', fontSize: '13px', background: 'rgba(239, 68, 68, 0.08)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>{supportError}</div>}
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <label style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text-primary)', letterSpacing: '0.5px' }}>TICKET TYPE</label>
-                  <select 
-                    value={supportType} 
-                    onChange={(e) => setSupportType(e.target.value)}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '8px',
-                      padding: '12px',
-                      color: '#fff',
-                      fontSize: '13.5px',
-                      outline: 'none'
-                    }}
-                  >
-                    <option value="error" style={{ background: '#0f172a' }}>⚠️ Report System Error / Bug</option>
-                    <option value="feature" style={{ background: '#0f172a' }}>💡 Request New Feature</option>
-                  </select>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <label style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text-primary)', letterSpacing: '0.5px' }}>DESCRIPTION & REPRODUCTION STEPS</label>
-                  <textarea 
-                    value={supportDesc}
-                    onChange={(e) => setSupportDesc(e.target.value)}
-                    placeholder="Provide a detailed description of the error or feature request..."
-                    required
-                    rows={6}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '8px',
-                      padding: '12px',
-                      color: '#fff',
-                      fontSize: '13.5px',
-                      outline: 'none',
-                      resize: 'vertical',
-                      lineHeight: '1.6'
-                    }}
-                  />
-                </div>
-
-                <button 
-                  type="submit" 
-                  className="enter-btn" 
-                  disabled={supportSubmitting}
-                  style={{
-                    padding: '14px 28px',
-                    fontSize: '13px',
-                    fontWeight: '600',
-                    letterSpacing: '1px',
-                    textTransform: 'uppercase',
-                    background: 'var(--text-primary)',
-                    color: '#000',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    alignSelf: 'flex-start',
-                    boxShadow: '0 4px 12px rgba(255, 255, 255, 0.1)',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  {supportSubmitting ? 'Submitting...' : 'Submit Ticket'}
-                </button>
-              </form>
-            )}
-          </div>
-        ) : null}
 
         {/* --- DEDICATED SAVED FEED VIEW --- */}
         {currentPanel === 'feed' && feedTab === 'saved' ? (
@@ -5727,6 +5665,9 @@ export default function App() {
             {/* Profile Tab Navigation — scrollable on small screens */}
             <div className="profile-tabs-wrapper">
               {[
+                ...(profileUser?.id === user.id ? [
+                  { id: 'support', label: 'Report Error / Request' }
+                ] : []),
                 { id: 'feed', label: 'Feed' },
                 { id: 'projects', label: 'Projects' },
                 { id: 'analytics', label: 'Analytics' },
@@ -5764,6 +5705,86 @@ export default function App() {
             {/* TAB CONTENTS */}
             <div className="profile-tab-content" style={{ marginTop: '10px' }}>
               
+              {/* 0. Support / Feedback Tab */}
+              {profileTab === 'support' && profileUser?.id === user.id && (
+                <div className="glass-card" style={{ padding: '30px', maxWidth: '600px', margin: '10px auto 20px auto', textAlign: 'left' }}>
+                  <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '20px', fontWeight: '800', marginBottom: '10px', color: '#fff' }}>
+                    🔧 Support & Feedback
+                  </h2>
+                  <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', lineHeight: '1.6', marginBottom: '24px' }}>
+                    Submit an error report or request a new feature. Our administration team will review your ticket.
+                  </p>
+
+                  {supportSuccess ? (
+                    <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '20px', borderRadius: '12px', color: '#10b981', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <strong style={{ fontSize: '15px' }}>✓ Ticket Registered Successfully</strong>
+                      <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.7)' }}>Thank you for helping us improve Open Store. Your support ticket has been queued.</span>
+                      <button 
+                        className="enter-btn" 
+                        style={{ marginTop: '12px', padding: '10px 20px', fontSize: '12px', background: 'var(--text-primary)', color: '#000', border: 'none', borderRadius: '8px', cursor: 'pointer', alignSelf: 'flex-start' }}
+                        onClick={() => { setSupportSuccess(false); setSupportDesc(''); }}
+                      >
+                        Submit Another Ticket
+                      </button>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleSupportSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      {supportError && <div style={{ color: '#ef4444', fontSize: '13px', background: 'rgba(239, 68, 68, 0.08)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>{supportError}</div>}
+                      
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <label style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text-primary)', letterSpacing: '0.5px' }}>TICKET TYPE</label>
+                        <select 
+                          value={supportType} 
+                          onChange={(e) => setSupportType(e.target.value)}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '8px',
+                            padding: '12px',
+                            color: '#fff',
+                            fontSize: '13.5px',
+                            outline: 'none'
+                          }}
+                        >
+                          <option value="error" style={{ background: '#0f172a' }}>⚠️ Report System Error / Bug</option>
+                          <option value="feature" style={{ background: '#0f172a' }}>💡 Request New Feature</option>
+                        </select>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <label style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text-primary)', letterSpacing: '0.5px' }}>DESCRIPTION & REPRODUCTION STEPS</label>
+                        <textarea 
+                          value={supportDesc}
+                          onChange={(e) => setSupportDesc(e.target.value)}
+                          placeholder="Provide a detailed description of the error or feature request..."
+                          required
+                          rows={6}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '8px',
+                            padding: '12px',
+                            color: '#fff',
+                            fontSize: '13.5px',
+                            outline: 'none',
+                            resize: 'vertical',
+                            lineHeight: '1.6'
+                          }}
+                        />
+                      </div>
+
+                      <button 
+                        type="submit" 
+                        className="publish-btn"
+                        style={{ width: '100%', padding: '12px', borderRadius: '8px', fontSize: '13.5px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                      >
+                        Submit Ticket
+                      </button>
+                    </form>
+                  )}
+                </div>
+              )}
+
               {/* 1. Feed Tab */}
               {profileTab === 'feed' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -6780,7 +6801,7 @@ export default function App() {
           <button 
             type="button"
             className={`mobile-nav-item ${currentPanel === 'profile' ? 'active' : ''}`}
-            onClick={() => { setProfileUserId(user.id); setCurrentPanel('profile'); setProfileTab('feed'); }}
+            onClick={() => { setProfileUserId(user.id); setCurrentPanel('profile'); setProfileTab('support'); }}
           >
             <UserIcon size={20} />
             <span>Profile</span>
