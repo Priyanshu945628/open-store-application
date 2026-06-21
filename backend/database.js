@@ -17,6 +17,42 @@ function queueDatabaseBackup() {
   }, 1000);
 }
 
+export async function syncDatabase() {
+  if (!process.env.VERCEL) return;
+
+  const dbPath = path.join('/tmp', 'database.sqlite');
+  
+  try {
+    if (db) {
+      await db.close();
+    }
+  } catch (err) {
+    console.warn('[Sync Database] Error closing db:', err.message);
+  }
+
+  await downloadDatabase();
+
+  db = await open({
+    filename: dbPath,
+    driver: sqlite3.Database
+  });
+
+  const originalRun = db.run.bind(db);
+  db.run = async (...args) => {
+    const result = await originalRun(...args);
+    if (process.env.VERCEL) {
+      try {
+        await uploadDatabase();
+      } catch (err) {
+        console.error('[Database Backup] Failed to upload database to GitHub on Vercel:', err.message);
+      }
+    } else {
+      queueDatabaseBackup();
+    }
+    return result;
+  };
+}
+
 export async function initDb() {
   const dbPath = process.env.VERCEL 
     ? path.join('/tmp', 'database.sqlite')
@@ -34,7 +70,15 @@ export async function initDb() {
   const originalRun = db.run.bind(db);
   db.run = async (...args) => {
     const result = await originalRun(...args);
-    queueDatabaseBackup();
+    if (process.env.VERCEL) {
+      try {
+        await uploadDatabase();
+      } catch (err) {
+        console.error('[Database Backup] Failed to upload database to GitHub on Vercel:', err.message);
+      }
+    } else {
+      queueDatabaseBackup();
+    }
     return result;
   };
 

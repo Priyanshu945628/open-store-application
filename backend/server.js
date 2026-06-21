@@ -48,6 +48,28 @@ const CRYPTO_KEY = process.env.CRYPTO_KEY || "open_store_dev_friend_super_secret
 
 app.use(cors());
 app.use(express.json());
+
+// Sync SQLite database from GitHub if running on Vercel
+let lastDbSyncTime = 0;
+const DB_SYNC_THROTTLE_MS = 3000;
+
+app.use(async (req, res, next) => {
+  if (process.env.VERCEL) {
+    const now = Date.now();
+    if (now - lastDbSyncTime > DB_SYNC_THROTTLE_MS) {
+      try {
+        const { syncDatabase } = await import('./database.js');
+        await syncDatabase();
+        lastDbSyncTime = Date.now();
+        console.log('[Sync Database] SQLite database synced successfully from GitHub.');
+      } catch (err) {
+        console.error('[Sync Database] Failed to sync database:', err.message);
+      }
+    }
+  }
+  next();
+});
+
 app.use('/admin', express.static(path.join(process.cwd(), '../admin-panel')));
 
 // Custom security headers middleware
