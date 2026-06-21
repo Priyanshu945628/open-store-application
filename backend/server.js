@@ -925,6 +925,10 @@ app.post('/api/messages', upload.single('media'), async (req, res) => {
     chatsList.push(newMsg);
     await saveChats(chatsList);
 
+    // Create message notification for recipient
+    const { createNotification } = await import('./database.js');
+    await createNotification(rId, sId, 'message', `@${sender.username} sent you a message`);
+
     res.json({
       ...newMsg,
       senderName: sender.username,

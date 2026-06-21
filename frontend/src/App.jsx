@@ -878,10 +878,10 @@ export default function App() {
   }, [user]);
 
   // Load notifications
-  const fetchNotifications = async () => {
+  const fetchNotifications = async (forceSync = false) => {
     if (!user) return;
     try {
-      const res = await fetch(`${API_BASE}/notifications?_=${Date.now()}`, {
+      const res = await fetch(`${API_BASE}/notifications?_=${Date.now()}${forceSync ? '&forceSync=true' : ''}`, {
         headers: { 'x-user-id': user.id.toString() }
       });
       if (res.ok) {
@@ -938,6 +938,17 @@ export default function App() {
     if (notif.postId) {
       setCurrentPanel('all');
       handleOpenComments(notif.postId);
+    } else if (notif.type === 'message' && notif.senderId) {
+      const senderObj = contacts.find(c => c.id === notif.senderId);
+      if (senderObj) {
+        setSelectedContact(senderObj);
+      } else {
+        fetch(`${API_BASE}/users/${notif.senderId}`)
+          .then(r => r.json())
+          .then(data => setSelectedContact(data))
+          .catch(() => {});
+      }
+      setCurrentPanel('chat');
     } else if (notif.senderId) {
       setProfileUserId(notif.senderId);
       setCurrentPanel('profile');
@@ -1305,10 +1316,10 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const fetchPosts = async () => {
+  const fetchPosts = async (forceSync = false) => {
     setRefreshing(true);
     try {
-      const res = await fetch(`${API_BASE}/posts?_=${Date.now()}`, {
+      const res = await fetch(`${API_BASE}/posts?_=${Date.now()}${forceSync ? '&forceSync=true' : ''}`, {
         headers: { 'x-user-id': user?.id?.toString() || '' }
       });
       if (res.ok) {
@@ -1325,9 +1336,9 @@ export default function App() {
     }
   };
 
-  const fetchStories = async () => {
+  const fetchStories = async (forceSync = false) => {
     try {
-      const res = await fetch(`${API_BASE}/stories?_=${Date.now()}`);
+      const res = await fetch(`${API_BASE}/stories?_=${Date.now()}${forceSync ? '&forceSync=true' : ''}`);
       if (res.ok) {
         const data = await res.json();
         setStories(data);
@@ -1349,10 +1360,10 @@ export default function App() {
     }
   };
 
-  const fetchContacts = async () => {
+  const fetchContacts = async (forceSync = false) => {
     if (!user) return;
     try {
-      const res = await fetch(`${API_BASE}/users/${user.id}/following?_=${Date.now()}`);
+      const res = await fetch(`${API_BASE}/users/${user.id}/following?_=${Date.now()}${forceSync ? '&forceSync=true' : ''}`);
       if (res.ok) {
         const data = await res.json();
         setContacts(data);
@@ -1362,10 +1373,10 @@ export default function App() {
     }
   };
 
-  const fetchAllUsers = async () => {
+  const fetchAllUsers = async (forceSync = false) => {
     try {
       // Simple fetch users by querying empty space or a user search query
-      const res = await fetch(`${API_BASE}/search?q=&_=${Date.now()}`, {
+      const res = await fetch(`${API_BASE}/search?q=&_=${Date.now()}${forceSync ? '&forceSync=true' : ''}`, {
         headers: { 'x-user-id': user?.id?.toString() || '' }
       });
       if (res.ok) {
@@ -1377,10 +1388,10 @@ export default function App() {
     }
   };
 
-  const fetchMessages = async () => {
+  const fetchMessages = async (forceSync = false) => {
     if (!user || !selectedContact) return;
     try {
-      const res = await fetch(`${API_BASE}/messages?userA=${user.id}&userB=${selectedContact.id}&_=${Date.now()}`);
+      const res = await fetch(`${API_BASE}/messages?userA=${user.id}&userB=${selectedContact.id}&_=${Date.now()}${forceSync ? '&forceSync=true' : ''}`);
       if (res.ok) {
         const data = await res.json();
         setChatMessages(data);
@@ -1937,9 +1948,9 @@ export default function App() {
         const { followed } = await res.json();
         
         // Update user state if followed list changes
-        fetchContacts();
-        fetchAllUsers();
-        fetchPosts();
+        fetchContacts(true);
+        fetchAllUsers(true);
+        fetchPosts(true);
 
         // Update posts local state following toggle
         setPosts(posts.map(p => {
@@ -1971,8 +1982,8 @@ export default function App() {
         body: JSON.stringify({ followerId, followedId: user.id })
       });
       if (res.ok) {
-        fetchNotifications();
-        fetchContacts();
+        fetchNotifications(true);
+        fetchContacts(true);
       }
     } catch (err) {
       console.error("Error accepting follow request:", err);
@@ -1987,8 +1998,8 @@ export default function App() {
         body: JSON.stringify({ followerId, followedId: user.id })
       });
       if (res.ok) {
-        fetchNotifications();
-        fetchContacts();
+        fetchNotifications(true);
+        fetchContacts(true);
       }
     } catch (err) {
       console.error("Error declining follow request:", err);
@@ -2018,7 +2029,7 @@ export default function App() {
       if (res.ok) {
         setNewChatText('');
         setChatFile(null);
-        fetchMessages();
+        fetchMessages(true);
       }
     } catch (err) {
       console.error("Error sending chat message:", err);
