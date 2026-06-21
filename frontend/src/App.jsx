@@ -722,6 +722,9 @@ export default function App() {
   const [replyingToMessage, setReplyingToMessage] = useState(null);
   const [lightboxImage, setLightboxImage] = useState(null);
   const [lightboxScale, setLightboxScale] = useState(1);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const chatLogRef = useRef(null);
+  const lastScrolledContactIdRef = useRef(null);
 
   // Profile Settings Modal State
   const [showSettings, setShowSettings] = useState(false);
@@ -1212,12 +1215,42 @@ export default function App() {
     }
   }, [currentPanel, profileTab, user, inWorkspace]);
 
-  // Scroll Chat to bottom
-  useEffect(() => {
-    if (chatMessages.length > 0) {
-      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const handleChatScroll = (e) => {
+    const container = e.target;
+    const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+    if (isAtBottom) {
+      setShowScrollToBottom(false);
+    } else {
+      setShowScrollToBottom(true);
     }
-  }, [chatMessages]);
+  };
+
+  const scrollToLatestChat = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    setShowScrollToBottom(false);
+  };
+
+  // Scroll Chat to bottom selectively
+  useEffect(() => {
+    if (chatMessages.length > 0 && chatLogRef.current) {
+      const container = chatLogRef.current;
+      const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 180;
+      
+      const lastMsg = chatMessages[chatMessages.length - 1];
+      const sentByMe = lastMsg && Number(lastMsg.senderId) === Number(user.id);
+      const isNewContact = lastScrolledContactIdRef.current !== selectedContact?.id;
+      
+      if (isNewContact || sentByMe || isAtBottom) {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        setShowScrollToBottom(false);
+        if (selectedContact) {
+          lastScrolledContactIdRef.current = selectedContact.id;
+        }
+      } else {
+        setShowScrollToBottom(true);
+      }
+    }
+  }, [chatMessages, selectedContact]);
 
   // Clear chat messages when selected contact changes to prevent visual leak
   useEffect(() => {
@@ -4384,7 +4417,7 @@ export default function App() {
             </div>
             
             {/* Conversation Area */}
-            <div className={`chat-conversation-area ${selectedContact ? 'fullscreen-mobile' : ''}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div className={`chat-conversation-area ${selectedContact ? 'fullscreen-mobile' : ''}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
               {selectedContact ? (
                 <>
                   {/* Header with back button (mobile) */}
@@ -4407,7 +4440,12 @@ export default function App() {
                     </button>
                   </div>
                   
-                  <div className="chat-messages-log" style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+                  <div 
+                    ref={chatLogRef}
+                    onScroll={handleChatScroll}
+                    className="chat-messages-log" 
+                    style={{ flex: 1, overflowY: 'auto', padding: '16px' }}
+                  >
                     {chatMessages.length === 0 ? (
                       <div style={{ margin: 'auto', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center', paddingTop: '40px' }}>
                         <div style={{ fontSize: '40px', marginBottom: '8px' }}>👋</div>
@@ -4573,6 +4611,16 @@ export default function App() {
                     <div style={{ padding: '16px', textAlign: 'center', background: 'rgba(255, 75, 75, 0.05)', borderTop: '1px solid var(--border-color)', color: 'var(--accent-danger)', fontSize: '13px', fontWeight: '500' }}>
                       🔒 Chat locked: Waiting for follow approval.
                     </div>
+                  )}
+                  {showScrollToBottom && (
+                    <button 
+                      type="button"
+                      className="chat-scroll-to-bottom-btn"
+                      onClick={scrollToLatestChat}
+                      title="Scroll to latest messages"
+                    >
+                      <ArrowDown size={16} />
+                    </button>
                   )}
                 </>
               ) : (

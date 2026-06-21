@@ -4382,4 +4382,36 @@ input:checked + .toggle-slider:before {
   to { transform: scale(1); opacity: 1; }
 }
 
+/* Floating scroll to bottom button */
+.chat-scroll-to-bottom-btn {
+  position: absolute;
+  bottom: 80px;
+  right: 24px;
+  background: var(--bg-surface-hover);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  z-index: 100;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.chat-scroll-to-bottom-btn:hover {
+  background: var(--border-color);
+  color: var(--accent-blue);
+  border-color: var(--accent-blue);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
+}
+
+.chat-scroll-to-bottom-btn:active {
+  transform: translateY(0);
+}
+
 
