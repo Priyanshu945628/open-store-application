@@ -950,6 +950,9 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setProfileUser(data);
+      } else if (res.status === 404 && targetId === user?.id) {
+        console.warn("Logged in user not found in database. Logging out.");
+        handleLogout();
       }
     } catch (err) {
       console.error("Error fetching profile details:", err);
@@ -1065,6 +1068,16 @@ export default function App() {
   // Load feed, stories, contacts when logged in
   useEffect(() => {
     if (user && inWorkspace) {
+      // Validate that the logged in user still exists in the database to prevent stale local sessions
+      fetch(`${API_BASE}/users/${user.id}?_=${Date.now()}`)
+        .then(res => {
+          if (res.status === 404) {
+            console.warn("Logged in user not found in database (possibly reset). Logging out.");
+            handleLogout();
+          }
+        })
+        .catch(err => console.error("Error validating user session:", err));
+
       fetchPosts();
       fetchStories();
       fetchContacts();
@@ -1104,6 +1117,12 @@ export default function App() {
     if (inWorkspace && currentPanel === 'profile') {
       const targetId = profileUserId || user?.id;
       if (targetId) {
+        // Pre-fill with the logged in user details if viewing own profile
+        if (user && targetId === user.id) {
+          setProfileUser(user);
+        } else {
+          setProfileUser(null);
+        }
         fetchProfileDetails(targetId);
         fetchProfileStats(targetId);
         fetchProfilePosts(targetId);
@@ -3656,17 +3675,48 @@ export default function App() {
           </div>
         </div>
 
-{currentPanel === 'feed' && (feedTab === 'all' || feedTab === 'updates' || feedTab === 'saved') && (
-          <div className="feed-tabs-bar glass-card" style={{ display: 'flex', gap: '8px', padding: '8px 16px', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-color)', margin: '0 -16px 16px -16px', position: 'sticky', top: '0', zIndex: 90 }}>
-            <button className={`feed-tab-btn ${feedTab === 'all' ? 'active' : ''}`} onClick={() => setFeedTab('all')} style={{ padding: '6px 12px', border: 'none', background: feedTab === 'all' ? 'var(--bg-surface-hover)' : 'transparent', color: 'var(--text-primary)', borderRadius: '6px', cursor: 'pointer', fontWeight: feedTab === 'all' ? '700' : '500', fontSize: '13px' }}>
-              All Releases
-            </button>
-            <button className={`feed-tab-btn ${feedTab === 'updates' ? 'active' : ''}`} onClick={() => setFeedTab('updates')} style={{ padding: '6px 12px', border: 'none', background: feedTab === 'updates' ? 'var(--bg-surface-hover)' : 'transparent', color: 'var(--text-primary)', borderRadius: '6px', cursor: 'pointer', fontWeight: feedTab === 'updates' ? '700' : '500', fontSize: '13px' }}>
-              Updates Log
-            </button>
-            <button className={`feed-tab-btn ${feedTab === 'saved' ? 'active' : ''}`} onClick={() => setFeedTab('saved')} style={{ padding: '6px 12px', border: 'none', background: feedTab === 'saved' ? 'var(--bg-surface-hover)' : 'transparent', color: 'var(--text-primary)', borderRadius: '6px', cursor: 'pointer', fontWeight: feedTab === 'saved' ? '700' : '500', fontSize: '13px' }}>
-              Saved Releases
-            </button>
+        {currentPanel === 'feed' && (
+          <div className="feed-tabs-bar glass-card" style={{
+            display: 'flex',
+            gap: '8px',
+            padding: '8px 16px',
+            background: 'var(--bg-surface)',
+            borderBottom: '1px solid var(--border-color)',
+            margin: '0 -16px 16px -16px',
+            position: 'sticky',
+            top: '0',
+            zIndex: 90,
+            overflowX: 'auto',
+            whiteSpace: 'nowrap',
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none'
+          }}>
+            {[
+              { id: 'all', label: 'All Releases' },
+              { id: 'followed', label: 'Followed Feed' },
+              { id: 'members', label: 'Find Members' },
+              { id: 'updates', label: 'Updates Log' },
+              { id: 'saved', label: 'Saved' }
+            ].map(tab => (
+              <button 
+                key={tab.id}
+                className={`feed-tab-btn ${feedTab === tab.id ? 'active' : ''}`} 
+                onClick={() => { setFeedTab(tab.id); setProfileUserId(null); }} 
+                style={{ 
+                  padding: '6px 12px', 
+                  border: 'none', 
+                  background: feedTab === tab.id ? 'var(--bg-surface-hover)' : 'transparent', 
+                  color: 'var(--text-primary)', 
+                  borderRadius: '6px', 
+                  cursor: 'pointer', 
+                  fontWeight: feedTab === tab.id ? '700' : '500', 
+                  fontSize: '13px',
+                  flexShrink: 0
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
         )}
 
@@ -5200,7 +5250,13 @@ export default function App() {
 
         {/* --- DEDICATED PROFILE TIMELINE & CONTROLS PANEL --- */}
         {currentPanel === 'profile' && (
-          <div className="profile-container" style={{ display: 'flex', flexDirection: 'column', gap: '24px', textAlign: 'left' }}>
+          !profileUser ? (
+            <div className="glass-card" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+              <div className="profile-loading-spinner"></div>
+              Loading Workspace Profile...
+            </div>
+          ) : (
+            <div className="profile-container" style={{ display: 'flex', flexDirection: 'column', gap: '24px', textAlign: 'left' }}>
             {/* User Profile Header Banner */}
             <div className="glass-card" style={{ padding: '24px', position: 'relative', overflow: 'hidden' }}>
               {profileUser?.tag && (
@@ -6130,6 +6186,7 @@ export default function App() {
 
             </div>
           </div>
+          )
         )}
       </main>
 
