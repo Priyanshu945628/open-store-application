@@ -338,6 +338,18 @@ function formatRelativeTime(dateString) {
   return `${diffYears} yrs ago`;
 }
 
+function parseUTCDate(dateString) {
+  if (!dateString) return new Date();
+  let formattedString = dateString;
+  if (!dateString.includes('Z') && !dateString.includes('+') && !dateString.includes('T')) {
+    // Convert SQLite 'YYYY-MM-DD HH:MM:SS' format to ISO UTC
+    formattedString = dateString.replace(' ', 'T') + 'Z';
+  } else if (!dateString.includes('Z') && dateString.includes('T') && !dateString.includes('+')) {
+    formattedString = dateString + 'Z';
+  }
+  return new Date(formattedString);
+}
+
 function TermsAndConditionsPage({ navigateTo }) {
   const [activeTab, setActiveTab] = useState('terms');
   const [consentCache, setConsentCache] = useState(true);
@@ -1423,7 +1435,7 @@ export default function App() {
           // Sort chronologically
           return Array.from(map.values()).sort((a, b) => {
             if (a.id !== b.id) return a.id - b.id;
-            return new Date(a.createdAt) - new Date(b.createdAt);
+            return parseUTCDate(a.createdAt) - parseUTCDate(b.createdAt);
           });
         });
       }
@@ -4414,7 +4426,7 @@ export default function App() {
                                 <span>Sending...</span>
                               </>
                             ) : (
-                              new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                              parseUTCDate(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                             )}
                           </div>
                         </div>
@@ -5893,7 +5905,7 @@ export default function App() {
                             <div>
                               <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                                 <span style={{ fontWeight: 600, fontSize: '13px' }}>@{comment.username}</span>
-                                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{new Date(comment.createdAt).toLocaleString()}</span>
+                                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{parseUTCDate(comment.createdAt).toLocaleString()}</span>
                               </div>
                               <p style={{ fontSize: '13px', margin: '4px 0', color: 'var(--text-primary)' }}>{comment.content}</p>
                               {comment.postContent && (
