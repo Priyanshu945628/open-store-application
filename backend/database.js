@@ -174,6 +174,7 @@ export async function initDb() {
       receiverId INTEGER NOT NULL,
       content TEXT,
       mediaUrl TEXT,
+      mediaName TEXT,
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (senderId) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (receiverId) REFERENCES users(id) ON DELETE CASCADE
@@ -289,6 +290,33 @@ export async function initDb() {
   try {
     await db.exec("ALTER TABLE follows ADD COLUMN status TEXT DEFAULT 'pending'");
   } catch (e) { /* Column already exists */ }
+
+  try {
+    await db.exec('ALTER TABLE messages ADD COLUMN mediaName TEXT');
+  } catch (e) { /* Column already exists */ }
+
+  try {
+    const { getChats } = await import('./github-service.js');
+    const chatsList = await getChats();
+    if (chatsList && chatsList.length > 0) {
+      console.log(`[Database Migration] Found ${chatsList.length} chats in chats.json. Checking migration...`);
+      for (const msg of chatsList) {
+        const exists = await db.get(
+          'SELECT 1 FROM messages WHERE senderId = ? AND receiverId = ? AND createdAt = ?',
+          [msg.senderId, msg.receiverId, msg.createdAt]
+        );
+        if (!exists) {
+          await db.run(
+            'INSERT INTO messages (senderId, receiverId, content, mediaUrl, mediaName, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
+            [msg.senderId, msg.receiverId, msg.content, msg.mediaUrl, msg.mediaName, msg.createdAt]
+          );
+        }
+      }
+      console.log('[Database Migration] chats.json migration checked successfully.');
+    }
+  } catch (err) {
+    console.error('[Database Migration] Error migrating chats.json to SQLite:', err.message);
+  }
 
   try {
     await db.run("UPDATE posts SET type = 'log' WHERE type = 'tweet'");
@@ -801,10 +829,10 @@ export async function deleteExpiredStories() {
 }
 
 // --- Messaging Queries (DMs) ---
-export async function sendMessage(senderId, receiverId, content, mediaUrl = null) {
+export async function sendMessage(senderId, receiverId, content, mediaUrl = null, mediaName = null) {
   const result = await db.run(
-    'INSERT INTO messages (senderId, receiverId, content, mediaUrl) VALUES (?, ?, ?, ?)',
-    [senderId, receiverId, content, mediaUrl]
+    'INSERT INTO messages (senderId, receiverId, content, mediaUrl, mediaName) VALUES (?, ?, ?, ?, ?)',
+    [senderId, receiverId, content, mediaUrl, mediaName]
   );
   return getMessageById(result.lastID);
 }

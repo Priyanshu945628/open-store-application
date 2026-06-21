@@ -845,25 +845,10 @@ app.get('/api/messages', async (req, res) => {
   try {
     const uA = parseInt(userA);
     const uB = parseInt(userB);
-    const chatsList = await getChatsList();
-    const filteredDMs = chatsList.filter(msg => 
-      (msg.senderId === uA && msg.receiverId === uB) ||
-      (msg.senderId === uB && msg.receiverId === uA)
-    );
-
-    // Populate sender name and avatar from database
-    const populatedDMs = [];
-    for (const msg of filteredDMs) {
-      const sender = await getUserById(msg.senderId);
-      populatedDMs.push({
-        ...msg,
-        senderName: sender ? sender.username : 'Unknown',
-        senderAvatar: sender ? sender.avatar : ''
-      });
-    }
-
-    res.json(populatedDMs);
+    const messages = await getDirectMessages(uA, uB);
+    res.json(messages);
   } catch (error) {
+    console.error("Error fetching messages from SQLite:", error.message);
     res.status(500).json({ error: "Server Error" });
   }
 });
@@ -911,30 +896,21 @@ app.post('/api/messages', upload.single('media'), async (req, res) => {
       }
     }
 
-    const chatsList = await getChatsList();
-    const newMsg = {
-      id: chatsList.length ? Math.max(...chatsList.map(m => m.id)) + 1 : 1,
-      senderId: sId,
-      receiverId: rId,
-      content: content || null,
+    const newMsg = await sendMessage(
+      sId,
+      rId,
+      content || null,
       mediaUrl,
-      mediaName: req.file ? req.file.originalname : null,
-      createdAt: new Date().toISOString()
-    };
-
-    chatsList.push(newMsg);
-    await saveChats(chatsList);
+      req.file ? req.file.originalname : null
+    );
 
     // Create message notification for recipient
     const { createNotification } = await import('./database.js');
     await createNotification(rId, sId, 'message', `@${sender.username} sent you a message`);
 
-    res.json({
-      ...newMsg,
-      senderName: sender.username,
-      senderAvatar: sender.avatar
-    });
+    res.json(newMsg);
   } catch (error) {
+    console.error("Error sending message to SQLite:", error.message);
     res.status(500).json({ error: "Server Error" });
   }
 });

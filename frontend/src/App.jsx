@@ -1199,6 +1199,11 @@ export default function App() {
     }
   }, [chatMessages]);
 
+  // Clear chat messages when selected contact changes to prevent visual leak
+  useEffect(() => {
+    setChatMessages([]);
+  }, [selectedContact?.id]);
+
   // Synchronize selectedContact details when contacts update in the background (e.g. follow status changes from pending to accepted)
   useEffect(() => {
     if (selectedContact) {
@@ -1394,7 +1399,33 @@ export default function App() {
       const res = await fetch(`${API_BASE}/messages?userA=${user.id}&userB=${selectedContact.id}&_=${Date.now()}${forceSync ? '&forceSync=true' : ''}`);
       if (res.ok) {
         const data = await res.json();
-        setChatMessages(data);
+        setChatMessages(prev => {
+          const map = new Map();
+          const currentContactId = selectedContact.id;
+          
+          // Keep existing messages of current contact
+          prev.forEach(msg => {
+            if (msg && msg.id && (
+              (msg.senderId === user.id && msg.receiverId === currentContactId) ||
+              (msg.senderId === currentContactId && msg.receiverId === user.id)
+            )) {
+              map.set(msg.id, msg);
+            }
+          });
+          
+          // Add new messages
+          data.forEach(msg => {
+            if (msg && msg.id) {
+              map.set(msg.id, msg);
+            }
+          });
+          
+          // Sort chronologically
+          return Array.from(map.values()).sort((a, b) => {
+            if (a.id !== b.id) return a.id - b.id;
+            return new Date(a.createdAt) - new Date(b.createdAt);
+          });
+        });
       }
     } catch (err) {
       console.error("Error fetching messages:", err);
@@ -4328,7 +4359,7 @@ export default function App() {
                       chatMessages.map(msg => (
                         <div 
                           key={msg.id} 
-                          className={`chat-message-bubble ${msg.senderId === user.id ? 'sent' : 'received'}`}
+                          className={`chat-message-bubble ${Number(msg.senderId) === Number(user.id) ? 'sent' : 'received'}`}
                         >
                           {msg.content && <div>{msg.content}</div>}
                           {msg.mediaUrl && (
@@ -4347,7 +4378,7 @@ export default function App() {
                               })()}
                             </div>
                           )}
-                          <div style={{ fontSize: '9px', opacity: 0.6, marginTop: 4, textAlign: msg.senderId === user.id ? 'right' : 'left' }}>
+                          <div style={{ fontSize: '9px', opacity: 0.6, marginTop: 4, textAlign: Number(msg.senderId) === Number(user.id) ? 'right' : 'left' }}>
                             {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </div>
                         </div>
