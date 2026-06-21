@@ -938,7 +938,7 @@ export default function App() {
     if (notif.postId) {
       setCurrentPanel('all');
       handleOpenComments(notif.postId);
-    } else {
+    } else if (notif.senderId) {
       setProfileUserId(notif.senderId);
       setCurrentPanel('profile');
       setProfileTab('feed');
@@ -1086,13 +1086,27 @@ export default function App() {
     }
   }, [user, inWorkspace]);
 
-  // Automatic background polling to prevent browser stale state (fetches notifications, posts, stories, and chats)
+  // Automatic background polling to prevent browser stale state (fetches notifications, posts, stories, contacts, all users, and chats)
   useEffect(() => {
     if (inWorkspace && user) {
       const interval = setInterval(() => {
         fetchNotifications();
         fetchPosts();
         fetchStories();
+        fetchContacts();
+        fetchAllUsers();
+        
+        // Poll profile details if profile tab is active
+        if (currentPanel === 'profile') {
+          const targetId = profileUserId || user.id;
+          if (targetId) {
+            fetchProfileDetails(targetId);
+            fetchProfileStats(targetId);
+            fetchProfileFollowers(targetId);
+            fetchProfileFollowing(targetId);
+          }
+        }
+        
         if (currentPanel === 'chat' && selectedContact) {
           fetchMessages();
           // Poll typing indicator
@@ -1107,10 +1121,10 @@ export default function App() {
         } else if (activeDetailsPost) {
           fetchComments(activeDetailsPost.id);
         }
-      }, 2000);
+      }, 3000);
       return () => clearInterval(interval);
     }
-  }, [inWorkspace, currentPanel, selectedContact, user, activeCommentsPostId, activeDetailsPost]);
+  }, [inWorkspace, currentPanel, selectedContact, user, activeCommentsPostId, activeDetailsPost, profileUserId]);
 
   // Fetch profile details when profile tab active
   useEffect(() => {
@@ -1173,6 +1187,16 @@ export default function App() {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [chatMessages]);
+
+  // Synchronize selectedContact details when contacts update in the background (e.g. follow status changes from pending to accepted)
+  useEffect(() => {
+    if (selectedContact) {
+      const updated = contacts.find(c => c.id === selectedContact.id);
+      if (updated && JSON.stringify(updated) !== JSON.stringify(selectedContact)) {
+        setSelectedContact(updated);
+      }
+    }
+  }, [contacts, selectedContact]);
 
   // Story playback timer
   useEffect(() => {
@@ -4158,11 +4182,11 @@ export default function App() {
                     
                     {u.id !== user.id ? (
                       <button 
-                        className={`publish-btn ${u.isFollowing ? 'unfollow' : ''}`} 
+                        className={`publish-btn ${u.followStatus === 'accepted' ? 'unfollow' : u.followStatus === 'pending' ? 'pending' : ''}`} 
                         style={{ fontSize: '11px', padding: '6px 14px', width: '100%', marginTop: '10px' }}
                         onClick={() => handleFollowToggle(u.id)}
                       >
-                        {u.isFollowing ? 'Following' : '+ Follow'}
+                        {u.followStatus === 'accepted' ? 'Following' : u.followStatus === 'pending' ? 'Pending' : '+ Follow'}
                       </button>
                     ) : (
                       <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '10px' }}>This is You</span>
@@ -5349,11 +5373,11 @@ export default function App() {
                     </button>
                     <button 
                       type="button" 
-                      className={`publish-btn ${contacts.some(c => c.id === profileUser.id) ? 'unfollow' : ''}`}
+                      className={`publish-btn ${contacts.some(c => c.id === profileUser.id && c.status === 'accepted') ? 'unfollow' : contacts.some(c => c.id === profileUser.id && c.status === 'pending') ? 'pending' : ''}`}
                       onClick={handleProfileFollowToggle}
                       style={{ padding: '8px 20px', borderRadius: '20px', fontSize: '13px', width: 'auto' }}
                     >
-                      {contacts.some(c => c.id === profileUser.id) ? 'Following' : '+ Follow'}
+                      {contacts.some(c => c.id === profileUser.id && c.status === 'accepted') ? 'Following' : contacts.some(c => c.id === profileUser.id && c.status === 'pending') ? 'Pending' : '+ Follow'}
                     </button>
                   </div>
                 )}

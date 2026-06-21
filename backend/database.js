@@ -7,6 +7,7 @@ let db;
 
 let backupTimeout = null;
 function queueDatabaseBackup() {
+  if (!process.env.VERCEL) return; // Skip GitHub DB upload on local development
   if (backupTimeout) clearTimeout(backupTimeout);
   backupTimeout = setTimeout(async () => {
     try {
@@ -15,6 +16,17 @@ function queueDatabaseBackup() {
       console.error('[Database Backup] Failed to back up SQLite database to GitHub:', err.message);
     }
   }, 1000);
+}
+
+let dbModified = false;
+export function isDbModified() {
+  return dbModified;
+}
+export function clearDbModified() {
+  dbModified = false;
+}
+export function markDbModified() {
+  dbModified = true;
 }
 
 export async function syncDatabase() {
@@ -41,11 +53,7 @@ export async function syncDatabase() {
   db.run = async (...args) => {
     const result = await originalRun(...args);
     if (process.env.VERCEL) {
-      try {
-        await uploadDatabase();
-      } catch (err) {
-        console.error('[Database Backup] Failed to upload database to GitHub on Vercel:', err.message);
-      }
+      markDbModified();
     } else {
       queueDatabaseBackup();
     }
@@ -58,8 +66,10 @@ export async function initDb() {
     ? path.join('/tmp', 'database.sqlite')
     : path.join(process.cwd(), 'database.sqlite');
   
-  // Try to download existing database from GitHub first
-  await downloadDatabase();
+  // Try to download existing database from GitHub first (only on Vercel)
+  if (process.env.VERCEL) {
+    await downloadDatabase();
+  }
   
   db = await open({
     filename: dbPath,
@@ -71,11 +81,7 @@ export async function initDb() {
   db.run = async (...args) => {
     const result = await originalRun(...args);
     if (process.env.VERCEL) {
-      try {
-        await uploadDatabase();
-      } catch (err) {
-        console.error('[Database Backup] Failed to upload database to GitHub on Vercel:', err.message);
-      }
+      markDbModified();
     } else {
       queueDatabaseBackup();
     }
@@ -422,14 +428,40 @@ export async function toggleFollow(followerId, followedId) {
   if (existing) {
     await db.run('DELETE FROM follows WHERE followerId = ? AND followedId = ?', [followerId, followedId]);
     await db.run("DELETE FROM notifications WHERE userId = ? AND senderId = ? AND (type = 'follow_request' OR type = 'follow_accept')", [followedId, followerId]);
+    // Also delete reverse follow accepted notification if any
+    await db.run("DELETE FROM notifications WHERE userId = ? AND senderId = ? AND (type = 'follow_request' OR type = 'follow_accept')", [followerId, followedId]);
     return { followed: false };
   } else {
-    await db.run("INSERT INTO follows (followerId, followedId, status) VALUES (?, ?, 'pending')", [followerId, followedId]);
-    const follower = await getUserById(followerId);
-    if (follower) {
-      await createNotification(followedId, followerId, 'follow_request', `@${follower.username} wants to follow you`);
+    // Check if reverse follow exists
+    const reverse = await db.get('SELECT * FROM follows WHERE followerId = ? AND followedId = ?', [followedId, followerId]);
+    if (reverse) {
+      // Mutual follow! Automatically set both to accepted
+      await db.run("INSERT INTO follows (followerId, followedId, status) VALUES (?, ?, 'accepted')", [followerId, followedId]);
+      await db.run("UPDATE follows SET status = 'accepted' WHERE followerId = ? AND followedId = ?", [followedId, followerId]);
+      
+      const follower = await getUserById(followerId);
+      const followed = await getUserById(followedId);
+      
+      // Clean up previous pending notifications
+      await db.run("DELETE FROM notifications WHERE userId = ? AND senderId = ? AND type = 'follow_request'", [followerId, followedId]);
+      await db.run("DELETE FROM notifications WHERE userId = ? AND senderId = ? AND type = 'follow_request'", [followedId, followerId]);
+      
+      if (follower) {
+        await createNotification(followedId, followerId, 'follow_accept', `@${follower.username} followed you back. You can now chat!`);
+      }
+      if (followed) {
+        await createNotification(followerId, followedId, 'follow_accept', `Mutual connection! You are now following @${followed.username}.`);
+      }
+      return { followed: true, status: 'accepted' };
+    } else {
+      // Normal follow request
+      await db.run("INSERT INTO follows (followerId, followedId, status) VALUES (?, ?, 'pending')", [followerId, followedId]);
+      const follower = await getUserById(followerId);
+      if (follower) {
+        await createNotification(followedId, followerId, 'follow_request', `@${follower.username} wants to follow you`);
+      }
+      return { followed: true, status: 'pending' };
     }
-    return { followed: true, status: 'pending' };
   }
 }
 

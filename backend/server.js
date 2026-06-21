@@ -70,6 +70,29 @@ app.use(async (req, res, next) => {
   next();
 });
 
+// Post-request database upload middleware for Vercel (uploads database once at the end of requests that wrote to database)
+app.use((req, res, next) => {
+  if (process.env.VERCEL) {
+    const originalEnd = res.end;
+    res.end = async function(...args) {
+      try {
+        const { isDbModified, clearDbModified } = await import('./database.js');
+        if (isDbModified()) {
+          clearDbModified();
+          console.log('[Database Sync] Database modified. Uploading database.sqlite to GitHub...');
+          const { uploadDatabase } = await import('./github-service.js');
+          await uploadDatabase();
+          console.log('[Database Sync] Database uploaded successfully.');
+        }
+      } catch (err) {
+        console.error('[Database Sync] Failed to upload database on request end:', err.message);
+      }
+      originalEnd.apply(this, args);
+    };
+  }
+  next();
+});
+
 app.use('/admin', express.static(path.join(process.cwd(), '../admin-panel')));
 
 // Custom security headers middleware
