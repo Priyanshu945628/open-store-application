@@ -4,7 +4,7 @@ import {
   Image, FileText, Plus, User as UserIcon, 
   LogOut, Shield, ChevronDown, Check, Terminal, ExternalLink, ArrowDown,
   Settings, Share2, Search, Play, Users, Bell, FileCode, Film, Eye, Trash2, Video, Globe, Bookmark,
-  PlayCircle, MessageCircle, ArrowLeft, Cookie, ShieldCheck
+  PlayCircle, MessageCircle, ArrowLeft, Cookie, ShieldCheck, Pencil, X, CornerUpLeft
 } from 'lucide-react';
 
 // Global fetch interceptor to override internal server errors (>= 500) to generic "Server Error"
@@ -718,6 +718,11 @@ export default function App() {
   const [isContactTyping, setIsContactTyping] = useState(false);
   const typingTimeoutRef = useRef(null);
 
+  // Message Replies and Lightbox States
+  const [replyingToMessage, setReplyingToMessage] = useState(null);
+  const [lightboxImage, setLightboxImage] = useState(null);
+  const [lightboxScale, setLightboxScale] = useState(1);
+
   // Profile Settings Modal State
   const [showSettings, setShowSettings] = useState(false);
   const [settingsUsername, setSettingsUsername] = useState('');
@@ -893,7 +898,7 @@ export default function App() {
   const fetchNotifications = async (forceSync = false) => {
     if (!user) return;
     try {
-      const res = await fetch(`${API_BASE}/notifications?_=${Date.now()}${forceSync ? '&forceSync=true' : ''}`, {
+      const res = await fetch(`${API_BASE}/notifications?_=${Date.now()}&currentPanel=${currentPanel}${forceSync ? '&forceSync=true' : ''}`, {
         headers: { 'x-user-id': user.id.toString() }
       });
       if (res.ok) {
@@ -919,6 +924,9 @@ export default function App() {
       const newNotifications = notifications.filter(n => !prevIds.has(n.id));
       
       newNotifications.forEach(notif => {
+        // Suppress message notifications if user is in message tab
+        if (currentPanel === 'chat' && notif.type === 'message') return;
+
         const id = Date.now() + Math.random();
         setToasts(prev => [...prev, { id, message: notif.message, type: notif.type }]);
         setTimeout(() => {
@@ -927,7 +935,7 @@ export default function App() {
       });
     }
     prevNotificationsRef.current = notifications;
-  }, [notifications]);
+  }, [notifications, currentPanel]);
 
   const handleClearNotifications = async () => {
     if (!user) return;
@@ -2059,6 +2067,7 @@ export default function App() {
 
     const textToSend = newChatText;
     const fileToSend = chatFile;
+    const currentReply = replyingToMessage;
 
     // Create optimistic message
     const tempMsgId = `temp_${Date.now()}`;
@@ -2069,6 +2078,9 @@ export default function App() {
       content: textToSend || null,
       mediaUrl: fileToSend ? URL.createObjectURL(fileToSend) : null,
       mediaName: fileToSend ? fileToSend.name : null,
+      replyToId: currentReply ? currentReply.id : null,
+      replyContent: currentReply ? (currentReply.content || currentReply.mediaName || '[Image/Media]') : null,
+      replySenderName: currentReply ? (currentReply.senderName || (Number(currentReply.senderId) === Number(user.id) ? user.username : selectedContact.username)) : null,
       createdAt: new Date().toISOString(),
       isSending: true
     };
@@ -2077,6 +2089,7 @@ export default function App() {
     setChatMessages(prev => [...prev, tempMsg]);
     setNewChatText('');
     setChatFile(null);
+    setReplyingToMessage(null);
 
     setSendingChat(true);
     try {
@@ -2085,6 +2098,7 @@ export default function App() {
       formData.append('receiverId', selectedContact.id);
       if (textToSend) formData.append('content', textToSend);
       if (fileToSend) formData.append('media', fileToSend);
+      if (currentReply) formData.append('replyToId', currentReply.id);
 
       const res = await fetch(`${API_BASE}/messages`, {
         method: 'POST',
@@ -2303,6 +2317,9 @@ export default function App() {
     setSettingsName(user.name || '');
     setSettingsAvatar(user.avatar || '');
     setSettingsNiche(user.niche || 'Web Development');
+    setSettingsDescription(user.description || '');
+    setSettingsTag(user.tag || '');
+    setSettingsSocialUrl(user.socialUrl || '');
     setSettingsError('');
     setSettingsSuggestions([]);
     setAvatarFile(null);
@@ -4099,6 +4116,8 @@ export default function App() {
                             src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} 
                             alt={post.mediaName}
                             loading="lazy"
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => setLightboxImage(`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`)}
                           />
                         )}
                       </div>
@@ -4398,37 +4417,84 @@ export default function App() {
                       chatMessages.map(msg => (
                         <div 
                           key={msg.id} 
-                          className={`chat-message-bubble ${Number(msg.senderId) === Number(user.id) ? 'sent' : 'received'} ${msg.isSending ? 'sending' : ''}`}
+                          id={`msg-${msg.id}`}
+                          className={`chat-message-row ${Number(msg.senderId) === Number(user.id) ? 'sent' : 'received'}`}
                         >
-                          {msg.content && <div>{msg.content}</div>}
-                          {msg.mediaUrl && (
-                            <div style={{ marginTop: '6px' }}>
-                              {(() => {
-                                const filename = msg.mediaName || msg.mediaUrl || '';
-                                let cleanName = filename;
-                                if (filename.endsWith('.enc')) cleanName = filename.slice(0, -4);
-                                const ext = cleanName.split('.').pop().toLowerCase();
-                                const isImg = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext);
-                                const isVid = ['mp4', 'webm', 'mov', 'ogg'].includes(ext);
-                                const downloadUrl = msg.isSending
-                                  ? msg.mediaUrl
-                                  : `${BACKEND_BASE}/api/files/download/${encodeURIComponent(msg.mediaUrl)}`;
-                                if (isImg) return <img src={downloadUrl} style={{ maxWidth: '100%', maxHeight: '250px', borderRadius: 8, objectFit: 'contain' }} alt="Chat media" />;
-                                if (isVid) return <video src={downloadUrl} controls style={{ maxWidth: '100%', maxHeight: '250px', borderRadius: 8 }} />;
-                                return <a href={downloadUrl} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'underline', fontSize: '11px' }} download={msg.mediaName || undefined}>📎 {msg.mediaName || 'attachment'}</a>;
-                              })()}
-                            </div>
+                          {Number(msg.senderId) === Number(user.id) && (
+                            <button
+                              type="button"
+                              className="reply-btn"
+                              title="Reply"
+                              onClick={() => setReplyingToMessage(msg)}
+                            >
+                              <CornerUpLeft size={12} />
+                            </button>
                           )}
-                          <div style={{ fontSize: '9px', opacity: 0.6, marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: Number(msg.senderId) === Number(user.id) ? 'flex-end' : 'flex-start', gap: '4px' }}>
-                            {msg.isSending ? (
-                              <>
-                                <RefreshCw size={8} className="spin-icon" />
-                                <span>Sending...</span>
-                              </>
-                            ) : (
-                              parseUTCDate(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                          
+                          <div className={`chat-message-bubble ${Number(msg.senderId) === Number(user.id) ? 'sent' : 'received'} ${msg.isSending ? 'sending' : ''}`}>
+                            {msg.replyContent && (
+                              <div 
+                                className="chat-message-reply-quote" 
+                                onClick={() => {
+                                  const targetElem = document.getElementById(`msg-${msg.replyToId}`);
+                                  if (targetElem) {
+                                    targetElem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                    // Visual highlight effect
+                                    targetElem.style.transition = 'background 0.3s ease';
+                                    const originalBg = targetElem.style.background;
+                                    targetElem.style.background = 'rgba(99, 102, 241, 0.2)';
+                                    setTimeout(() => {
+                                      targetElem.style.background = originalBg;
+                                    }, 1000);
+                                  }
+                                }}
+                              >
+                                <div className="reply-quote-sender">@{msg.replySenderName || 'user'}</div>
+                                <div className="reply-quote-text">{msg.replyContent || msg.replyMediaName || 'Image/Media'}</div>
+                              </div>
                             )}
+                            
+                            {msg.content && <div>{msg.content}</div>}
+                            {msg.mediaUrl && (
+                              <div style={{ marginTop: '6px' }}>
+                                {(() => {
+                                  const filename = msg.mediaName || msg.mediaUrl || '';
+                                  let cleanName = filename;
+                                  if (filename.endsWith('.enc')) cleanName = filename.slice(0, -4);
+                                  const ext = cleanName.split('.').pop().toLowerCase();
+                                  const isImg = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext);
+                                  const isVid = ['mp4', 'webm', 'mov', 'ogg'].includes(ext);
+                                  const downloadUrl = msg.isSending
+                                    ? msg.mediaUrl
+                                    : `${BACKEND_BASE}/api/files/download/${encodeURIComponent(msg.mediaUrl)}`;
+                                  if (isImg) return <img src={downloadUrl} style={{ maxWidth: '100%', maxHeight: '250px', borderRadius: 8, objectFit: 'contain', cursor: 'pointer' }} alt="Chat media" onClick={() => setLightboxImage(downloadUrl)} />;
+                                  if (isVid) return <video src={downloadUrl} controls style={{ maxWidth: '100%', maxHeight: '250px', borderRadius: 8 }} />;
+                                  return <a href={downloadUrl} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'underline', fontSize: '11px' }} download={msg.mediaName || undefined}>📎 {msg.mediaName || 'attachment'}</a>;
+                                })()}
+                              </div>
+                            )}
+                            <div style={{ fontSize: '9px', opacity: 0.6, marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: Number(msg.senderId) === Number(user.id) ? 'flex-end' : 'flex-start', gap: '4px' }}>
+                              {msg.isSending ? (
+                                <>
+                                  <RefreshCw size={8} className="spin-icon" />
+                                  <span>Sending...</span>
+                                </>
+                              ) : (
+                                parseUTCDate(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                              )}
+                            </div>
                           </div>
+
+                          {Number(msg.senderId) !== Number(user.id) && (
+                            <button
+                              type="button"
+                              className="reply-btn"
+                              title="Reply"
+                              onClick={() => setReplyingToMessage(msg)}
+                            >
+                              <CornerUpLeft size={12} style={{ transform: 'scaleX(-1)' }} />
+                            </button>
+                          )}
                         </div>
                       ))
                     )}
@@ -4446,32 +4512,63 @@ export default function App() {
                   </div>
                   
                   {selectedContact.status === 'accepted' ? (
-                    <form className="chat-input-toolbar" onSubmit={handleSendChatMessage}>
-                      <input 
-                        type="file" 
-                        ref={chatFileInputRef} 
-                        style={{ display: 'none' }} 
-                        onChange={(e) => setChatFile(e.target.files[0])} 
-                      />
-                      <button 
-                        type="button" 
-                        className={`icon-btn ${chatFile ? 'text-success' : ''}`}
-                        onClick={() => chatFileInputRef.current?.click()}
-                        title="Attach File"
-                      >
-                        <Plus size={18} />
-                      </button>
-                      <input 
-                        type="text" 
-                        className="chat-msg-input" 
-                        placeholder={chatFile ? `File: ${chatFile.name}` : "Message @" + selectedContact.username + "…"}
-                        value={newChatText}
-                        onChange={(e) => handleTypingInChat(e.target.value)}
-                      />
-                      <button type="submit" className="icon-btn" disabled={sendingChat}>
-                        <Send size={16} />
-                      </button>
-                    </form>
+                    <div className="chat-input-container" style={{ position: 'relative', display: 'flex', flexDirection: 'column', width: '100%' }}>
+                      {replyingToMessage && (
+                        <div className="chat-reply-preview-bar" style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '8px 12px',
+                          background: 'rgba(255, 255, 255, 0.04)',
+                          borderBottom: '1px solid var(--border-color)',
+                          borderLeft: '4px solid var(--accent-blue)',
+                          fontSize: '12px',
+                          borderTopLeftRadius: '8px',
+                          borderTopRightRadius: '8px'
+                        }}>
+                          <div style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-secondary)', textAlign: 'left' }}>
+                            <span style={{ fontWeight: 'bold', color: 'var(--accent-blue)', marginRight: '6px' }}>
+                              Replying to @{replyingToMessage.senderName || (Number(replyingToMessage.senderId) === Number(user.id) ? user.username : selectedContact.username)}:
+                            </span>
+                            <span>{replyingToMessage.content || replyingToMessage.mediaName || '[Image/Media]'}</span>
+                          </div>
+                          <button 
+                            type="button" 
+                            onClick={() => setReplyingToMessage(null)}
+                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '18px', padding: '0 4px', lineHeight: 1 }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )}
+                      
+                      <form className="chat-input-toolbar" onSubmit={handleSendChatMessage} style={{ borderTopLeftRadius: replyingToMessage ? 0 : undefined, borderTopRightRadius: replyingToMessage ? 0 : undefined, borderTop: replyingToMessage ? 'none' : undefined }}>
+                        <input 
+                          type="file" 
+                          ref={chatFileInputRef} 
+                          style={{ display: 'none' }} 
+                          onChange={(e) => setChatFile(e.target.files[0])} 
+                        />
+                        <button 
+                          type="button" 
+                          className={`icon-btn ${chatFile ? 'text-success' : ''}`}
+                          onClick={() => chatFileInputRef.current?.click()}
+                          title="Attach File"
+                        >
+                          <Plus size={18} />
+                        </button>
+                        <input 
+                          type="text" 
+                          className="chat-msg-input" 
+                          placeholder={chatFile ? `File: ${chatFile.name}` : "Message @" + selectedContact.username + "…"}
+                          value={newChatText}
+                          onChange={(e) => handleTypingInChat(e.target.value)}
+                        />
+                        <button type="submit" className="icon-btn" disabled={sendingChat}>
+                          <Send size={16} />
+                        </button>
+                      </form>
+                    </div>
                   ) : (
                     <div style={{ padding: '16px', textAlign: 'center', background: 'rgba(255, 75, 75, 0.05)', borderTop: '1px solid var(--border-color)', color: 'var(--accent-danger)', fontSize: '13px', fontWeight: '500' }}>
                       🔒 Chat locked: Waiting for follow approval.
@@ -4670,7 +4767,7 @@ export default function App() {
                         {post.mediaType && post.mediaType.startsWith('video/') ? (
                           <video src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} style={{ width: '100%', maxHeight: '150px', objectFit: 'contain' }} controls onTimeUpdate={(e) => handleVideoTimeUpdate(e, post.id)} />
                         ) : (
-                          <img src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} style={{ width: '100%', maxHeight: '150px', objectFit: 'contain' }} alt="" />
+                          <img src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} style={{ width: '100%', maxHeight: '150px', objectFit: 'contain', cursor: 'pointer' }} alt="" onClick={() => setLightboxImage(`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`)} />
                         )}
                       </div>
                       
@@ -5389,6 +5486,17 @@ export default function App() {
                   <h2 style={{ fontSize: '20px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     {profileUser?.name ? profileUser.name : `@${profileUser?.username || 'user'}`}
                     {profileUser?.id === user.id && <span style={{ fontSize: '10.5px', background: 'rgba(255,255,255,0.08)', padding: '2px 8px', borderRadius: '20px', color: 'var(--text-secondary)' }}>You</span>}
+                    {profileUser?.id === user.id && (
+                      <button 
+                        type="button" 
+                        className="profile-edit-pencil-btn" 
+                        onClick={openSettingsDialog}
+                        title="Edit Space Profile"
+                        style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}
+                      >
+                        <Pencil size={14} style={{ color: 'var(--text-secondary)' }} />
+                      </button>
+                    )}
                   </h2>
                   {profileUser?.name && (
                     <div style={{ color: 'var(--text-muted)', fontSize: '13.5px', marginTop: '2px', fontWeight: 500 }}>
@@ -5853,7 +5961,7 @@ export default function App() {
                               {post.mediaType && post.mediaType.startsWith('video/') ? (
                                 <video src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} style={{ width: '100%', maxHeight: '150px', objectFit: 'contain' }} controls onTimeUpdate={(e) => handleVideoTimeUpdate(e, post.id)} />
                               ) : (
-                                <img src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} style={{ width: '100%', maxHeight: '150px', objectFit: 'contain' }} alt="" />
+                                <img src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} style={{ width: '100%', maxHeight: '150px', objectFit: 'contain', cursor: 'pointer' }} alt="" onClick={() => setLightboxImage(`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`)} />
                               )}
                             </div>
                             
@@ -5935,211 +6043,8 @@ export default function App() {
               {profileTab === 'settings' && profileUser?.id === user.id && (
                 <div className="glass-card" style={{ padding: '24px', maxWidth: '500px' }}>
                   <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>Inline Settings</h3>
-                  {settingsError && (
-                    <div className="settings-suggestions-block" style={{ marginBottom: 12 }}>
-                      <div style={{ color: 'var(--accent-danger)', fontSize: '13px', fontWeight: 'bold' }}>{settingsError}</div>
-                      {settingsSuggestions.length > 0 && (
-                        <>
-                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>Suggested unique alternatives:</div>
-                          <div className="suggestions-list">
-                            {settingsSuggestions.map((sug, index) => (
-                              <button key={index} type="button" className="suggestion-btn" onClick={() => selectSuggestedName(sug)}>
-                                {sug}
-                              </button>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
 
                   <form onSubmit={handleUpdateSettings} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    <div className="form-group">
-                      <label>Display Name (Rename)</label>
-                      <div className="form-input-wrapper">
-                        <UserIcon size={16} className="text-muted" />
-                        <input 
-                          type="text" 
-                          placeholder="Your Display Name"
-                          value={settingsName}
-                          onChange={(e) => setSettingsName(e.target.value)}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="form-group">
-                      <label>Space Username</label>
-                      <div className="form-input-wrapper">
-                        <UserIcon size={16} className="text-muted" />
-                        <input 
-                          type="text" 
-                          placeholder="dev_friend"
-                          value={settingsUsername}
-                          onChange={(e) => setSettingsUsername(e.target.value)}
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    <div className="form-group">
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <label style={{ margin: 0 }}>Profile Picture</label>
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          <button
-                            type="button"
-                            onClick={() => { setAvatarMode('file'); setAvatarFile(null); setAvatarPreview(''); }}
-                            style={{
-                              fontSize: '10px', padding: '3px 10px', borderRadius: '20px', cursor: 'pointer',
-                              background: avatarMode === 'file' ? '#ffffff' : 'transparent',
-                              color: avatarMode === 'file' ? '#000' : 'var(--text-muted)',
-                              border: '1px solid var(--border-color)', fontWeight: 600
-                            }}
-                          >
-                            Upload Photo
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => { setAvatarMode('url'); setAvatarFile(null); setAvatarPreview(''); }}
-                            style={{
-                              fontSize: '10px', padding: '3px 10px', borderRadius: '20px', cursor: 'pointer',
-                              background: avatarMode === 'url' ? '#ffffff' : 'transparent',
-                              color: avatarMode === 'url' ? '#000' : 'var(--text-muted)',
-                              border: '1px solid var(--border-color)', fontWeight: 600
-                            }}
-                          >
-                            Paste URL
-                          </button>
-                        </div>
-                      </div>
-
-                      {(avatarPreview || settingsAvatar) && (
-                        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px' }}>
-                          <Avatar 
-                            username={settingsUsername} 
-                            src={avatarPreview || settingsAvatar} 
-                            size={72} 
-                            style={{ border: '2px solid var(--border-color)', objectFit: 'cover' }} 
-                          />
-                        </div>
-                      )}
-
-                      {avatarMode === 'file' ? (
-                        <>
-                          <input
-                            type="file"
-                            ref={avatarFileInputRef}
-                            accept="image/png,image/jpeg,image/gif,image/webp"
-                            style={{ display: 'none' }}
-                            onChange={handleAvatarFileChange}
-                          />
-                          {!avatarFile ? (
-                            <div
-                              className="file-upload-zone"
-                              onClick={() => avatarFileInputRef.current?.click()}
-                              style={{ padding: '20px', minHeight: '80px' }}
-                            >
-                              <UserIcon size={22} className="text-muted" style={{ marginBottom: 6 }} />
-                              <div style={{ fontSize: '12.5px', fontWeight: 500 }}>Click to choose a photo</div>
-                              <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>PNG, JPG, GIF, WebP — max 10MB</div>
-                            </div>
-                          ) : (
-                            <div className="file-preview">
-                              <div className="preview-info">
-                                <span className="preview-icon">🖼️</span>
-                                <div className="preview-details">
-                                  <span className="preview-name">{avatarFile.name}</span>
-                                  <span className="preview-size">{(avatarFile.size / 1024).toFixed(1)} KB</span>
-                                </div>
-                              </div>
-                              <button type="button" className="remove-file-btn" onClick={() => { setAvatarFile(null); setAvatarPreview(''); }}>×</button>
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <div className="form-input-wrapper">
-                          <Terminal size={16} className="text-muted" />
-                          <input
-                            type="text"
-                            placeholder="https://example.com/my-photo.png"
-                            value={settingsAvatar}
-                            onChange={(e) => setSettingsAvatar(e.target.value)}
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="form-group">
-                      <label>Development Niche Feed</label>
-                      <div className="form-input-wrapper" style={{ paddingLeft: '8px' }}>
-                        <select 
-                          style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', outline: 'none', width: '100%', cursor: 'pointer' }}
-                          value={settingsNiche}
-                          onChange={(e) => setSettingsNiche(e.target.value)}
-                        >
-                          {Object.entries(NICHE_CATEGORIES).map(([catName, nichesList]) => (
-                            <optgroup label={catName} key={catName} style={{ background: '#12101a', color: 'var(--text-muted)' }}>
-                              {nichesList.map((n, i) => (
-                                <option key={i} value={n} style={{ background: '#12101a', color: 'white' }}>{n}</option>
-                              ))}
-                            </optgroup>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="form-group">
-                      <label>Profile Tag (max 10 chars)</label>
-                      <div className="form-input-wrapper">
-                        <Terminal size={16} className="text-muted" />
-                        <input 
-                          type="text" 
-                          placeholder="e.g. CORE-DEV"
-                          value={settingsTag}
-                          onChange={(e) => {
-                            if (e.target.value.length <= 10) {
-                              setSettingsTag(e.target.value);
-                            }
-                          }}
-                        />
-                      </div>
-                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'right', marginTop: '2px' }}>
-                        {settingsTag.length}/10 chars
-                      </div>
-                    </div>
-
-                    <div className="form-group">
-                      <label>Profile Description (max 50 chars)</label>
-                      <div className="form-input-wrapper">
-                        <FileText size={16} className="text-muted" />
-                        <input 
-                          type="text" 
-                          placeholder="Brief bio about yourself..."
-                          value={settingsDescription}
-                          onChange={(e) => {
-                            if (e.target.value.length <= 50) {
-                              setSettingsDescription(e.target.value);
-                            }
-                          }}
-                        />
-                      </div>
-                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'right', marginTop: '2px' }}>
-                        {settingsDescription.length}/50 chars
-                      </div>
-                    </div>
-
-                    <div className="form-group">
-                      <label>Social / Portfolio URL</label>
-                      <div className="form-input-wrapper">
-                        <Globe size={16} className="text-muted" />
-                        <input 
-                          type="text" 
-                          placeholder="https://github.com/myusername"
-                          value={settingsSocialUrl}
-                          onChange={(e) => setSettingsSocialUrl(e.target.value)}
-                        />
-                      </div>
-                    </div>
-
                     <div className="form-group">
                       <label>Default Playback Quality</label>
                       <div className="form-input-wrapper" style={{ paddingLeft: '8px' }}>
@@ -6183,20 +6088,8 @@ export default function App() {
                       <label htmlFor="autoplay-captions-checkbox" style={{ margin: 0, cursor: 'pointer' }}>Autoplay & Captions Enabled</label>
                     </div>
 
-                    {uploadProgress !== null && (
-                      <div className="upload-progress-container" style={{ padding: '10px 0', marginBottom: '10px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                          <span>Uploading avatar...</span>
-                          <span>{uploadProgress}%</span>
-                        </div>
-                        <div className="progress-bar-bg" style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.06)', borderRadius: '2px', overflow: 'hidden' }}>
-                          <div className="progress-bar-fill" style={{ width: `${uploadProgress}%`, height: '100%', background: 'linear-gradient(90deg, #4f46e5, #0ea5e9)', borderRadius: '2px', transition: 'width 0.2s ease-out' }} />
-                        </div>
-                      </div>
-                    )}
-
-                    <button type="submit" className="auth-btn" style={{ marginTop: '10px' }} disabled={uploadingAvatar}>
-                      {uploadingAvatar ? 'Uploading photo...' : 'Save Space Configuration'}
+                    <button type="submit" className="auth-btn" style={{ marginTop: '10px' }}>
+                      Save Preferences
                     </button>
                   </form>
 
@@ -6325,7 +6218,8 @@ export default function App() {
                   className="details-image-preview" 
                   src={`${BACKEND_BASE}/api/files/download/${activeDetailsPost.mediaUrl}`} 
                   alt={activeDetailsPost.mediaName || 'Post media'} 
-                  style={{ width: '100%', borderRadius: 'var(--radius-sm)', objectFit: 'cover', maxHeight: '200px' }}
+                  style={{ width: '100%', borderRadius: 'var(--radius-sm)', objectFit: 'cover', maxHeight: '200px', cursor: 'pointer' }}
+                  onClick={() => setLightboxImage(`${BACKEND_BASE}/api/files/download/${activeDetailsPost.mediaUrl}`)}
                 />
               )}
             </div>
@@ -6801,6 +6695,304 @@ export default function App() {
         </div>
       )}
 
+      {/* Zoomable Image Lightbox Modal */}
+      {lightboxImage && (
+        <div 
+          className="lightbox-overlay"
+          onClick={() => { setLightboxImage(null); setLightboxScale(1); }}
+        >
+          <div className="lightbox-toolbar" onClick={(e) => e.stopPropagation()}>
+            <button 
+              className="lightbox-btn" 
+              onClick={() => setLightboxScale(prev => Math.min(prev + 0.25, 3))}
+              title="Zoom In"
+            >
+              <Plus size={18} />
+            </button>
+            <button 
+              className="lightbox-btn" 
+              onClick={() => setLightboxScale(prev => Math.max(prev - 0.25, 0.5))}
+              title="Zoom Out"
+            >
+              <span style={{ fontSize: '18px', fontWeight: 'bold', lineHeight: 1 }}>−</span>
+            </button>
+            <button 
+              className="lightbox-btn" 
+              onClick={() => setLightboxScale(1)}
+              title="Reset Zoom"
+            >
+              <RefreshCw size={14} />
+            </button>
+            <button 
+              className="lightbox-btn" 
+              onClick={() => { setLightboxImage(null); setLightboxScale(1); }}
+              title="Close"
+              style={{ background: 'rgba(239, 68, 68, 0.2)', borderColor: 'rgba(239, 68, 68, 0.3)' }}
+            >
+              <X size={18} />
+            </button>
+          </div>
+          
+          <div className="lightbox-container" onClick={(e) => e.stopPropagation()}>
+            <img 
+              className="lightbox-image"
+              src={lightboxImage} 
+              alt="Zoomed preview" 
+              style={{ 
+                transform: `scale(${lightboxScale})`, 
+                cursor: lightboxScale > 1 ? 'grab' : 'zoom-in' 
+              }}
+              onClick={() => setLightboxScale(prev => prev === 1 ? 2 : 1)}
+            />
+          </div>
+          
+          <div className="lightbox-zoom-indicator">
+            Zoom: {Math.round(lightboxScale * 100)}%
+          </div>
+        </div>
+      )}
+
+      {/* Floating glassmorphic Edit Profile Modal overlay */}
+      {showSettings && (
+        <div className="edit-profile-modal-overlay" onClick={() => setShowSettings(false)}>
+          <div className="edit-profile-modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="edit-profile-modal-header">
+              <h3>Edit Space Profile</h3>
+              <button 
+                type="button" 
+                onClick={() => setShowSettings(false)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            
+            <div className="edit-profile-modal-body">
+              {settingsError && (
+                <div className="settings-suggestions-block" style={{ marginBottom: 12 }}>
+                  <div style={{ color: 'var(--accent-danger)', fontSize: '13px', fontWeight: 'bold' }}>{settingsError}</div>
+                  {settingsSuggestions.length > 0 && (
+                    <>
+                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>Suggested unique alternatives:</div>
+                      <div className="suggestions-list">
+                        {settingsSuggestions.map((sug, index) => (
+                          <button key={index} type="button" className="suggestion-btn" onClick={() => selectSuggestedName(sug)}>
+                            {sug}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              <form onSubmit={handleUpdateSettings} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div className="form-group">
+                  <label>Display Name (Rename)</label>
+                  <div className="form-input-wrapper">
+                    <UserIcon size={16} className="text-muted" />
+                    <input 
+                      type="text" 
+                      placeholder="Your Display Name"
+                      value={settingsName}
+                      onChange={(e) => setSettingsName(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>Space Username</label>
+                  <div className="form-input-wrapper">
+                    <UserIcon size={16} className="text-muted" />
+                    <input 
+                      type="text" 
+                      placeholder="username"
+                      value={settingsUsername}
+                      onChange={(e) => setSettingsUsername(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <label style={{ margin: 0 }}>Profile Picture</label>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button
+                        type="button"
+                        onClick={() => { setAvatarMode('file'); setAvatarFile(null); setAvatarPreview(''); }}
+                        style={{
+                          fontSize: '10px', padding: '3px 10px', borderRadius: '20px', cursor: 'pointer',
+                          background: avatarMode === 'file' ? '#ffffff' : 'transparent',
+                          color: avatarMode === 'file' ? '#000' : 'var(--text-muted)',
+                          border: '1px solid var(--border-color)', fontWeight: 600
+                        }}
+                      >
+                        Upload Photo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setAvatarMode('url'); setAvatarFile(null); setAvatarPreview(''); }}
+                        style={{
+                          fontSize: '10px', padding: '3px 10px', borderRadius: '20px', cursor: 'pointer',
+                          background: avatarMode === 'url' ? '#ffffff' : 'transparent',
+                          color: avatarMode === 'url' ? '#000' : 'var(--text-muted)',
+                          border: '1px solid var(--border-color)', fontWeight: 600
+                        }}
+                      >
+                        Paste URL
+                      </button>
+                    </div>
+                  </div>
+
+                  {(avatarPreview || settingsAvatar) && (
+                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px' }}>
+                      <Avatar 
+                        username={settingsUsername} 
+                        src={avatarPreview || settingsAvatar} 
+                        size={72} 
+                        style={{ border: '2px solid var(--border-color)', objectFit: 'cover' }} 
+                      />
+                    </div>
+                  )}
+
+                  {avatarMode === 'file' ? (
+                    <>
+                      <input
+                        type="file"
+                        ref={avatarFileInputRef}
+                        accept="image/png,image/jpeg,image/gif,image/webp"
+                        style={{ display: 'none' }}
+                        onChange={handleAvatarFileChange}
+                      />
+                      {!avatarFile ? (
+                        <div
+                          className="file-upload-zone"
+                          onClick={() => avatarFileInputRef.current?.click()}
+                          style={{ padding: '20px', minHeight: '80px', cursor: 'pointer' }}
+                        >
+                          <UserIcon size={22} className="text-muted" style={{ marginBottom: 6 }} />
+                          <div style={{ fontSize: '12.5px', fontWeight: 500 }}>Click to choose a photo</div>
+                          <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>PNG, JPG, GIF, WebP — max 10MB</div>
+                        </div>
+                      ) : (
+                        <div className="file-preview">
+                          <div className="preview-info">
+                            <span className="preview-icon">🖼️</span>
+                            <div className="preview-details">
+                              <span className="preview-name">{avatarFile.name}</span>
+                              <span className="preview-size">{(avatarFile.size / 1024).toFixed(1)} KB</span>
+                            </div>
+                          </div>
+                          <button type="button" className="remove-file-btn" onClick={() => { setAvatarFile(null); setAvatarPreview(''); }}>×</button>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="form-input-wrapper">
+                      <Terminal size={16} className="text-muted" />
+                      <input
+                        type="text"
+                        placeholder="https://example.com/my-photo.png"
+                        value={settingsAvatar}
+                        onChange={(e) => setSettingsAvatar(e.target.value)}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="form-group">
+                  <label>Development Niche Feed</label>
+                  <div className="form-input-wrapper" style={{ paddingLeft: '8px' }}>
+                    <select 
+                      style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', outline: 'none', width: '100%', cursor: 'pointer' }}
+                      value={settingsNiche}
+                      onChange={(e) => setSettingsNiche(e.target.value)}
+                    >
+                      {Object.entries(NICHE_CATEGORIES).map(([catName, nichesList]) => (
+                        <optgroup label={catName} key={catName} style={{ background: '#12101a', color: 'var(--text-muted)' }}>
+                          {nichesList.map((n, i) => (
+                            <option key={i} value={n} style={{ background: '#12101a', color: 'white' }}>{n}</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>Profile Tag (max 10 chars)</label>
+                  <div className="form-input-wrapper">
+                    <Terminal size={16} className="text-muted" />
+                    <input 
+                      type="text" 
+                      placeholder="e.g. CORE-DEV"
+                      value={settingsTag}
+                      onChange={(e) => {
+                        if (e.target.value.length <= 10) {
+                          setSettingsTag(e.target.value);
+                        }
+                      }}
+                    />
+                  </div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'right', marginTop: '2px' }}>
+                    {settingsTag.length}/10 chars
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>Profile Description (max 50 chars)</label>
+                  <div className="form-input-wrapper">
+                    <FileText size={16} className="text-muted" />
+                    <input 
+                      type="text" 
+                      placeholder="Brief bio about yourself..."
+                      value={settingsDescription}
+                      onChange={(e) => {
+                        if (e.target.value.length <= 50) {
+                          setSettingsDescription(e.target.value);
+                        }
+                      }}
+                    />
+                  </div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'right', marginTop: '2px' }}>
+                    {settingsDescription.length}/50 chars
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>Social / Portfolio URL</label>
+                  <div className="form-input-wrapper">
+                    <Globe size={16} className="text-muted" />
+                    <input 
+                      type="text" 
+                      placeholder="https://github.com/myusername"
+                      value={settingsSocialUrl}
+                      onChange={(e) => setSettingsSocialUrl(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {uploadProgress !== null && (
+                  <div className="upload-progress-container" style={{ padding: '10px 0', marginBottom: '10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                      <span>Uploading avatar...</span>
+                      <span>{uploadProgress}%</span>
+                    </div>
+                    <div className="progress-bar-bg" style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.06)', borderRadius: '2px', overflow: 'hidden' }}>
+                      <div className="progress-bar-fill" style={{ width: `${uploadProgress}%`, height: '100%', background: 'linear-gradient(90deg, #4f46e5, #0ea5e9)', borderRadius: '2px', transition: 'width 0.2s ease-out' }} />
+                    </div>
+                  </div>
+                )}
+
+                <button type="submit" className="auth-btn" style={{ marginTop: '10px' }} disabled={uploadingAvatar}>
+                  {uploadingAvatar ? 'Uploading photo...' : 'Save Profile Details'}
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -175,6 +175,7 @@ export async function initDb() {
       content TEXT,
       mediaUrl TEXT,
       mediaName TEXT,
+      replyToId INTEGER DEFAULT NULL,
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (senderId) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (receiverId) REFERENCES users(id) ON DELETE CASCADE
@@ -293,6 +294,10 @@ export async function initDb() {
 
   try {
     await db.exec('ALTER TABLE messages ADD COLUMN mediaName TEXT');
+  } catch (e) { /* Column already exists */ }
+
+  try {
+    await db.exec('ALTER TABLE messages ADD COLUMN replyToId INTEGER DEFAULT NULL');
   } catch (e) { /* Column already exists */ }
 
   try {
@@ -829,17 +834,20 @@ export async function deleteExpiredStories() {
 }
 
 // --- Messaging Queries (DMs) ---
-export async function sendMessage(senderId, receiverId, content, mediaUrl = null, mediaName = null) {
+export async function sendMessage(senderId, receiverId, content, mediaUrl = null, mediaName = null, replyToId = null) {
   const result = await db.run(
-    'INSERT INTO messages (senderId, receiverId, content, mediaUrl, mediaName) VALUES (?, ?, ?, ?, ?)',
-    [senderId, receiverId, content, mediaUrl, mediaName]
+    'INSERT INTO messages (senderId, receiverId, content, mediaUrl, mediaName, replyToId) VALUES (?, ?, ?, ?, ?, ?)',
+    [senderId, receiverId, content, mediaUrl, mediaName, replyToId]
   );
   return getMessageById(result.lastID);
 }
 
 export async function getMessageById(messageId) {
   return db.get(`
-    SELECT m.*, u.username as senderName, u.avatar as senderAvatar
+    SELECT m.*, u.username as senderName, u.avatar as senderAvatar,
+           (SELECT content FROM messages WHERE id = m.replyToId) as replyContent,
+           (SELECT mediaName FROM messages WHERE id = m.replyToId) as replyMediaName,
+           (SELECT username FROM users WHERE id = (SELECT senderId FROM messages WHERE id = m.replyToId)) as replySenderName
     FROM messages m
     JOIN users u ON m.senderId = u.id
     WHERE m.id = ?
@@ -848,7 +856,10 @@ export async function getMessageById(messageId) {
 
 export async function getDirectMessages(userA, userB) {
   return db.all(`
-    SELECT m.*, u.username as senderName, u.avatar as senderAvatar
+    SELECT m.*, u.username as senderName, u.avatar as senderAvatar,
+           (SELECT content FROM messages WHERE id = m.replyToId) as replyContent,
+           (SELECT mediaName FROM messages WHERE id = m.replyToId) as replyMediaName,
+           (SELECT username FROM users WHERE id = (SELECT senderId FROM messages WHERE id = m.replyToId)) as replySenderName
     FROM messages m
     JOIN users u ON m.senderId = u.id
     WHERE (m.senderId = ? AND m.receiverId = ?)

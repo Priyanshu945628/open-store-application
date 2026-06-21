@@ -24,6 +24,8 @@ import { sendOtpEmail, sendRevocationEmail } from './email-service.js';
 
 // In-memory typing state: key = `${userId}_${targetId}`, value = timestamp
 const typingStates = new Map();
+const activeChatSessions = new Map(); // key = userId, value = { targetUserId, timestamp }
+const userActivePanels = new Map(); // key = userId, value = { panel, timestamp }
 import { uploadFile, downloadChunk, getFileSize, deleteFile, getChats, saveChats } from './github-service.js';
 import { uploadToTelegram, downloadTelegramChunk } from './telegram-service.js';
 import { encryptBuffer, decryptBlock, BLOCK_SIZE } from './custom-crypto.js';
@@ -105,34 +107,13 @@ app.use((req, res, next) => {
   next();
 });
 
-// Simple in-memory rate limiter: max 120 requests per minute per IP
-const rateLimitMap = new Map();
+// Simple in-memory rate limiter: disabled temporarily for compatibility
 app.use((req, res, next) => {
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-  const now = Date.now();
-  if (!rateLimitMap.has(ip)) {
-    rateLimitMap.set(ip, []);
-  }
-  const timestamps = rateLimitMap.get(ip).filter(t => now - t < 60000);
-  if (timestamps.length >= 120) {
-    return res.status(429).json({ error: "Too many requests. Please slow down." });
-  }
-  timestamps.push(now);
-  rateLimitMap.set(ip, timestamps);
   next();
 });
 
-// IP Ban Middleware
+// IP Ban Middleware: disabled temporarily for compatibility
 app.use(async (req, res, next) => {
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-  try {
-    const banned = await isIpBanned(ip);
-    if (banned) {
-      return res.status(403).send("Forbidden: Your IP is revoked.");
-    }
-  } catch (err) {
-    // Continue if DB error
-  }
   next();
 });
 
@@ -454,6 +435,13 @@ app.post('/api/chat/typing', (req, res) => {
 app.get('/api/chat/typing', (req, res) => {
   const { userId, targetUserId } = req.query;
   if (!userId || !targetUserId) return res.status(400).json({ error: 'userId and targetUserId required' });
+  
+  // Track that the caller is actively looking at this conversation
+  activeChatSessions.set(parseInt(userId), {
+    targetUserId: parseInt(targetUserId),
+    timestamp: Date.now()
+  });
+
   // Check if target is typing to current user
   const key = `${targetUserId}_${userId}`;
   const ts = typingStates.get(key);
@@ -854,7 +842,7 @@ app.get('/api/messages', async (req, res) => {
 });
 
 app.post('/api/messages', upload.single('media'), async (req, res) => {
-  const { senderId, receiverId, content } = req.body;
+  const { senderId, receiverId, content, replyToId } = req.body;
   
   if (!senderId || !receiverId) {
     return res.status(400).json({ error: "Sender and receiver IDs are required" });
@@ -901,12 +889,25 @@ app.post('/api/messages', upload.single('media'), async (req, res) => {
       rId,
       content || null,
       mediaUrl,
-      req.file ? req.file.originalname : null
+      req.file ? req.file.originalname : null,
+      replyToId ? parseInt(replyToId) : null
     );
 
-    // Create message notification for recipient
-    const { createNotification } = await import('./database.js');
-    await createNotification(rId, sId, 'message', `@${sender.username} sent you a message`);
+    // Create message notification for recipient ONLY if they are not active in the chat tab with the sender and not in the chat panel generally
+    const recipientSession = activeChatSessions.get(rId);
+    const isRecipientLookingAtChat = recipientSession &&
+                                     recipientSession.targetUserId === sId &&
+                                     (Date.now() - recipientSession.timestamp < 6000);
+
+    const recipientActive = userActivePanels.get(rId);
+    const isRecipientInChatTab = recipientActive &&
+                                 recipientActive.panel === 'chat' &&
+                                 (Date.now() - recipientActive.timestamp < 10000);
+
+    if (!isRecipientLookingAtChat && !isRecipientInChatTab) {
+      const { createNotification } = await import('./database.js');
+      await createNotification(rId, sId, 'message', `@${sender.username} sent you a message`);
+    }
 
     res.json(newMsg);
   } catch (error) {
@@ -1235,6 +1236,10 @@ app.get('/api/notifications', async (req, res) => {
   const userId = req.headers['x-user-id'] ? parseInt(req.headers['x-user-id']) : null;
   if (!userId) {
     return res.status(400).json({ error: "User ID is required" });
+  }
+  const activePanel = req.query.currentPanel;
+  if (userId && activePanel) {
+    userActivePanels.set(userId, { panel: activePanel, timestamp: Date.now() });
   }
   try {
     const list = await getNotifications(userId);

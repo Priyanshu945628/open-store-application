@@ -54,9 +54,9 @@ function writeUInt32BE(array, value, offset) {
 
 function readUInt32BE(array, offset) {
   return ((array[offset] << 24) |
-          (array[offset + 1] << 16) |
-          (array[offset + 2] << 8) |
-          array[offset + 3]) >>> 0;
+    (array[offset + 1] << 16) |
+    (array[offset + 2] << 8) |
+    array[offset + 3]) >>> 0;
 }
 
 function customHash256(input) {
@@ -100,7 +100,7 @@ function customHash256(input) {
       const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
       const ch = (e & f) ^ (~e & g);
       const temp1 = (h + S1 + ch + w[t % 16] + 0x428a2f98) | 0;
-      
+
       const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
       const maj = (a & b) ^ (a & c) ^ (b & c);
       const temp2 = (S0 + maj) | 0;
@@ -145,7 +145,7 @@ class ChaoticPRNG {
     }
     this.x = 0.123456789 + (sum % 700000000) / 1000000000;
     this.r = 3.9999 + ((sum % 10000) / 100000000);
-    
+
     for (let i = 0; i < 128; i++) {
       this.next();
     }
@@ -200,7 +200,7 @@ function decryptBlock(encBlockData, key, blockIndex) {
 function decryptBuffer(buffer, key) {
   const chunks = [];
   const totalBlocks = Math.ceil(buffer.length / BLOCK_SIZE);
-  
+
   for (let b = 0; b < totalBlocks; b++) {
     const start = b * BLOCK_SIZE;
     const end = Math.min(start + BLOCK_SIZE, buffer.length);
@@ -208,7 +208,7 @@ function decryptBuffer(buffer, key) {
     const decryptedBlock = decryptBlock(block, key, b);
     chunks.push(decryptedBlock);
   }
-  
+
   let totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
   let result = new Uint8Array(totalLength);
   let offset = 0;
@@ -228,12 +228,7 @@ function hexToBytes(hex) {
 }
 
 // --- App Control Logic ---
-const localHosts = ['localhost', '127.0.0.1', '::1', '[::1]', '::', '[::]', '0.0.0.0', '[0.0.0.0]'];
-const isLocal = localHosts.includes(window.location.hostname) || 
-                window.location.hostname.startsWith('192.168.') || 
-                window.location.hostname.startsWith('10.') || 
-                window.location.hostname.endsWith('.local');
-const API_BASE = isLocal ? 'http://localhost:5000' : window.location.origin;
+const API_BASE = 'https://open-store-backend.vercel.app';
 
 let adminToken = sessionStorage.getItem('adminToken') || '';
 
@@ -266,7 +261,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-    
+
     btn.classList.add('active');
     const panelId = btn.getAttribute('data-tab');
     document.getElementById(panelId).classList.add('active');
@@ -280,16 +275,16 @@ async function apiRequest(endpoint, options = {}) {
   if (adminToken) {
     headers['x-admin-token'] = adminToken;
   }
-  
+
   try {
     const res = await fetch(`${API_BASE}${endpoint}`, {
       ...options,
       headers
     });
-    
+
     const latency = Date.now() - start;
     statLatency.innerText = `${latency}ms`;
-    
+
     if (res.status === 403) {
       logTerminal(`GATEWAY ERROR 403: Access Revoked. IP Banned.`, 'red');
       alert("FORBIDDEN: IP is currently blocked.");
@@ -308,7 +303,7 @@ async function apiRequest(endpoint, options = {}) {
       }, 1000);
       return res;
     }
-    
+
     return res;
   } catch (err) {
     if (err.message !== "Banned") {
@@ -322,35 +317,35 @@ async function apiRequest(endpoint, options = {}) {
 loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   loginError.classList.add('hidden');
-  
+
   const email = adminEmailInput.value.trim();
   const password = adminPasswordInput.value;
-  
+
   logTerminal(`INITIATING HANDSHAKE: Requesting validation block cipher for ${email}...`, 'yellow');
-  
+
   try {
     const res = await apiRequest('/api/admin/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
     });
-    
+
     const data = await res.json();
-    
+
     if (!res.ok) {
       logTerminal(`AUTHENTICATION CYCLE FAILED: ${data.error || 'Invalid Identity'}`, 'red');
       loginError.innerText = data.error || 'Authentication Failed';
       loginError.classList.remove('hidden');
       return;
     }
-    
+
     const securePayloadHex = data.securePayload;
     if (!securePayloadHex) {
       throw new Error("Corrupted server response. No cryptographic payload received.");
     }
-    
+
     logTerminal(`PAYLOAD RECEIVED. Attempting locally-computed decryption using cipher passcode...`, 'yellow');
-    
+
     let decryptedText;
     try {
       const encryptedBytes = hexToBytes(securePayloadHex);
@@ -362,7 +357,7 @@ loginForm.addEventListener('submit', async (e) => {
       loginError.classList.remove('hidden');
       return;
     }
-    
+
     let payload;
     try {
       payload = JSON.parse(decryptedText);
@@ -372,25 +367,25 @@ loginForm.addEventListener('submit', async (e) => {
       loginError.classList.remove('hidden');
       return;
     }
-    
+
     if (payload.status !== 'success' || !payload.token) {
       logTerminal(`VERIFICATION FAILURE: Decrypted verification status is false.`, 'red');
       loginError.innerText = "Dynamic validation failed. Access denied.";
       loginError.classList.remove('hidden');
       return;
     }
-    
+
     logTerminal(`DECRYPTION EXECUTED SUCCESS: Session Signature Decoded. Token matching OK.`, 'green');
     adminToken = payload.token;
     sessionStorage.setItem('adminToken', adminToken);
-    
+
     // Transition UI
     loginContainer.classList.add('hidden');
     dashboardContainer.classList.remove('hidden');
     logTerminal(`GATEWAY KEY VERIFIED. Administrative root shell established.`, 'green');
-    
+
     loadDashboard();
-    
+
   } catch (err) {
     console.error(err);
   }
@@ -410,10 +405,10 @@ async function fetchUsers() {
   try {
     const res = await apiRequest('/api/admin/users');
     if (!res.ok) return;
-    
+
     const users = await res.json();
     statTotalUsers.innerText = users.length;
-    
+
     usersTableBody.innerHTML = '';
     users.forEach(u => {
       const tr = document.createElement('tr');
@@ -439,11 +434,11 @@ async function fetchSupportRequests() {
   try {
     const res = await apiRequest('/api/admin/support-requests');
     if (!res.ok) return;
-    
+
     const requests = await res.json();
     const tableBody = document.getElementById('support-table-body');
     tableBody.innerHTML = '';
-    
+
     if (requests.length === 0) {
       tableBody.innerHTML = `
         <tr>
@@ -452,13 +447,13 @@ async function fetchSupportRequests() {
       `;
       return;
     }
-    
+
     requests.forEach(r => {
       const tr = document.createElement('tr');
       const formattedDate = new Date(r.createdAt).toLocaleString();
       const typeLabel = r.type === 'error' ? '⚠️ ERROR' : '💡 FEATURE';
       const typeColor = r.type === 'error' ? 'red' : 'green';
-      
+
       tr.innerHTML = `
         <td>${r.id}</td>
         <td><strong>@${r.username || 'Anonymous'}</strong></td>
@@ -473,21 +468,21 @@ async function fetchSupportRequests() {
   }
 }
 
-window.revokeUser = async function(userId, username) {
+window.revokeUser = async function (userId, username) {
   const reason = prompt(`Specify the reason for revoking user @${username}:`, "Violation of Content Policy");
   if (reason === null) return;
-  
+
   if (!confirm(`CONFIRM ACCOUNT REVOCATION:\nAre you sure you want to permanently delete user @${username} and notify them via email?`)) return;
-  
+
   logTerminal(`REVOKING USER: Dispatching delete sequence for @${username}...`, 'yellow');
-  
+
   try {
     const res = await apiRequest(`/api/admin/users/${userId}/revoke`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reason })
     });
-    
+
     if (res.ok) {
       logTerminal(`REVOKE SUCCESS: User @${username} has been removed and notified.`, 'green');
       await fetchUsers();
@@ -504,10 +499,10 @@ async function fetchBans() {
   try {
     const res = await apiRequest('/api/admin/banned-ips');
     if (!res.ok) return;
-    
+
     const bans = await res.json();
     statBannedIps.innerText = bans.length;
-    
+
     bansTableBody.innerHTML = '';
     if (bans.length === 0) {
       bansTableBody.innerHTML = `
@@ -517,7 +512,7 @@ async function fetchBans() {
       `;
       return;
     }
-    
+
     bans.forEach(b => {
       const tr = document.createElement('tr');
       const formattedDate = new Date(b.bannedAt).toLocaleString();
@@ -535,17 +530,17 @@ async function fetchBans() {
   }
 }
 
-window.unbanIpAddress = async function(ip) {
+window.unbanIpAddress = async function (ip) {
   if (!confirm(`Are you sure you want to unban and restore access for IP ${ip}?`)) return;
   logTerminal(`UNBAN TRANSACTION: Revoking block on IP ${ip}...`, 'yellow');
-  
+
   try {
     const res = await apiRequest('/api/admin/unban', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ip })
     });
-    
+
     if (res.ok) {
       logTerminal(`UNBAN SUCCESS: IP ${ip} unblocked. Database entry removed.`, 'green');
       await fetchBans();
