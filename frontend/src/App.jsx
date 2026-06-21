@@ -723,6 +723,7 @@ export default function App() {
   const [lightboxImage, setLightboxImage] = useState(null);
   const [lightboxScale, setLightboxScale] = useState(1);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [actionedRequests, setActionedRequests] = useState({});
   const chatLogRef = useRef(null);
   const lastScrolledContactIdRef = useRef(null);
 
@@ -2022,6 +2023,45 @@ export default function App() {
 
   // Follow Actions
   const handleFollowToggle = async (targetUserId) => {
+    // 1. Determine current follow state
+    const isUnfollowing = contacts.some(c => c.id === targetUserId);
+    
+    // Save original state for rollbacks on failure
+    const originalContacts = [...contacts];
+    const originalAllUsers = [...allUsers];
+    const originalPosts = [...posts];
+    const originalProfileStats = { ...profileStats };
+
+    // Check if target is already following us (makes it mutual accepted follow)
+    const isFollower = notifications.some(n => n.senderId === targetUserId && n.type === 'follow_request');
+    const optimisticStatus = isFollower ? 'accepted' : 'pending';
+
+    // 2. Perform Optimistic updates
+    if (isUnfollowing) {
+      setContacts(prev => prev.filter(c => c.id !== targetUserId));
+      setAllUsers(prev => prev.map(u => u.id === targetUserId ? { ...u, followStatus: null } : u));
+      setPosts(prev => prev.map(p => p.userId === targetUserId ? { ...p, isFollowing: 0 } : p));
+      if (profileUser && profileUser.id === targetUserId) {
+        setProfileStats(prev => ({ ...prev, followersCount: Math.max(0, prev.followersCount - 1) }));
+      }
+    } else {
+      const userObj = allUsers.find(u => u.id === targetUserId) || profileUser;
+      if (userObj) {
+        setContacts(prev => {
+          if (prev.some(c => c.id === targetUserId)) {
+            return prev.map(c => c.id === targetUserId ? { ...c, status: optimisticStatus } : c);
+          } else {
+            return [...prev, { ...userObj, status: optimisticStatus }];
+          }
+        });
+      }
+      setAllUsers(prev => prev.map(u => u.id === targetUserId ? { ...u, followStatus: optimisticStatus } : u));
+      setPosts(prev => prev.map(p => p.userId === targetUserId ? { ...p, isFollowing: optimisticStatus === 'accepted' ? 1 : 0 } : p));
+      if (profileUser && profileUser.id === targetUserId) {
+        setProfileStats(prev => ({ ...prev, followersCount: prev.followersCount + 1 }));
+      }
+    }
+
     try {
       const res = await fetch(`${API_BASE}/users/${targetUserId}/follow`, {
         method: 'POST',
@@ -2029,23 +2069,32 @@ export default function App() {
         body: JSON.stringify({ followerId: user.id })
       });
       if (res.ok) {
-        const { followed } = await res.json();
+        const { followed, status } = await res.json();
         
-        // Update user state if followed list changes
+        // Sync states to whatever backend actually returned (just to be completely correct)
+        setContacts(prev => {
+          if (!followed) {
+            return prev.filter(c => c.id !== targetUserId);
+          }
+          return prev.map(c => c.id === targetUserId ? { ...c, status } : c);
+        });
+        setAllUsers(prev => prev.map(u => u.id === targetUserId ? { ...u, followStatus: followed ? status : null } : u));
+        setPosts(prev => prev.map(p => p.userId === targetUserId ? { ...p, isFollowing: (followed && status === 'accepted') ? 1 : 0 } : p));
+        
+        // Background sync to ensure client consistency
         fetchContacts(true);
         fetchAllUsers(true);
         fetchPosts(true);
-
-        // Update posts local state following toggle
-        setPosts(posts.map(p => {
-          if (p.userId === targetUserId) {
-            return { ...p, isFollowing: followed ? 1 : 0 };
-          }
-          return p;
-        }));
+      } else {
+        throw new Error("Failed to toggle follow");
       }
     } catch (err) {
       console.error("Follow error:", err);
+      // Rollback to original states
+      setContacts(originalContacts);
+      setAllUsers(originalAllUsers);
+      setPosts(originalPosts);
+      setProfileStats(originalProfileStats);
     }
   };
 
@@ -2059,6 +2108,16 @@ export default function App() {
   };
 
   const handleAcceptFollow = async (followerId) => {
+    setActionedRequests(prev => ({ ...prev, [followerId]: 'accepted' }));
+    
+    // Optimistically update contacts status
+    setContacts(prev => {
+      if (prev.some(c => c.id === followerId)) {
+        return prev.map(c => c.id === followerId ? { ...c, status: 'accepted' } : c);
+      }
+      return prev;
+    });
+
     try {
       const res = await fetch(`${API_BASE}/follows/accept`, {
         method: 'POST',
@@ -2071,10 +2130,16 @@ export default function App() {
       }
     } catch (err) {
       console.error("Error accepting follow request:", err);
+      setActionedRequests(prev => {
+        const copy = { ...prev };
+        delete copy[followerId];
+        return copy;
+      });
     }
   };
 
   const handleDeclineFollow = async (followerId) => {
+    setActionedRequests(prev => ({ ...prev, [followerId]: 'declined' }));
     try {
       const res = await fetch(`${API_BASE}/follows/decline`, {
         method: 'POST',
@@ -2087,6 +2152,11 @@ export default function App() {
       }
     } catch (err) {
       console.error("Error declining follow request:", err);
+      setActionedRequests(prev => {
+        const copy = { ...prev };
+        delete copy[followerId];
+        return copy;
+      });
     }
   };
 
@@ -3801,23 +3871,35 @@ export default function App() {
                           <span style={{ fontSize: '12px', color: 'var(--text-primary)', display: 'block' }}>{notif.message}</span>
                           <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>{formatRelativeTime(notif.createdAt)}</span>
                           {notif.type === 'follow_request' && (
-                            <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
-                              <button 
-                                type="button" 
-                                className="publish-btn" 
-                                style={{ padding: '3px 10px', fontSize: '10px', borderRadius: '12px', width: 'auto', background: 'var(--accent-blue)', color: 'white' }}
-                                onClick={(e) => { e.stopPropagation(); handleAcceptFollow(notif.senderId); }}
-                              >
-                                Accept
-                              </button>
-                              <button 
-                                type="button" 
-                                className="publish-btn" 
-                                style={{ padding: '3px 10px', fontSize: '10px', borderRadius: '12px', width: 'auto', background: 'rgba(0, 0, 0, 0.08)', color: 'var(--text-primary)' }}
-                                onClick={(e) => { e.stopPropagation(); handleDeclineFollow(notif.senderId); }}
-                              >
-                                Decline
-                              </button>
+                            <div style={{ display: 'flex', gap: '8px', marginTop: '6px', alignItems: 'center' }}>
+                              {actionedRequests[notif.senderId] === 'accepted' ? (
+                                <span className="success-badge-anim" style={{ fontSize: '10px', color: 'var(--accent-success)', display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: 'bold' }}>
+                                  <Check size={10} /> Accepted
+                                </span>
+                              ) : actionedRequests[notif.senderId] === 'declined' ? (
+                                <span style={{ fontSize: '10px', color: 'var(--accent-danger)', fontWeight: 'bold' }}>
+                                  Declined
+                                </span>
+                              ) : (
+                                <>
+                                  <button 
+                                    type="button" 
+                                    className="publish-btn" 
+                                    style={{ padding: '3px 10px', fontSize: '10px', borderRadius: '12px', width: 'auto', background: 'var(--accent-blue)', color: 'white' }}
+                                    onClick={(e) => { e.stopPropagation(); handleAcceptFollow(notif.senderId); }}
+                                  >
+                                    Accept
+                                  </button>
+                                  <button 
+                                    type="button" 
+                                    className="publish-btn" 
+                                    style={{ padding: '3px 10px', fontSize: '10px', borderRadius: '12px', width: 'auto', background: 'rgba(0, 0, 0, 0.08)', color: 'var(--text-primary)' }}
+                                    onClick={(e) => { e.stopPropagation(); handleDeclineFollow(notif.senderId); }}
+                                  >
+                                    Decline
+                                  </button>
+                                </>
+                              )}
                             </div>
                           )}
                         </div>
@@ -4357,23 +4439,35 @@ export default function App() {
                       <p style={{ fontSize: '13px', color: 'var(--text-primary)' }}>{notif.message}</p>
                       <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{formatRelativeTime(notif.createdAt)}</span>
                       {notif.type === 'follow_request' && (
-                        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                          <button 
-                            type="button" 
-                            className="publish-btn" 
-                            style={{ padding: '4px 14px', fontSize: '11px', borderRadius: '14px', width: 'auto', background: 'var(--accent-blue)', color: 'white' }}
-                            onClick={(e) => { e.stopPropagation(); handleAcceptFollow(notif.senderId); }}
-                          >
-                            Accept Follow
-                          </button>
-                          <button 
-                            type="button" 
-                            className="publish-btn" 
-                            style={{ padding: '4px 14px', fontSize: '11px', borderRadius: '14px', width: 'auto', background: 'rgba(255, 255, 255, 0.08)', color: 'white' }}
-                            onClick={(e) => { e.stopPropagation(); handleDeclineFollow(notif.senderId); }}
-                          >
-                            Decline
-                          </button>
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'center' }}>
+                          {actionedRequests[notif.senderId] === 'accepted' ? (
+                            <span className="success-badge-anim" style={{ fontSize: '11px', color: 'var(--accent-success)', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 'bold' }}>
+                              <Check size={12} /> Accepted
+                            </span>
+                          ) : actionedRequests[notif.senderId] === 'declined' ? (
+                            <span style={{ fontSize: '11px', color: 'var(--accent-danger)', fontWeight: 'bold' }}>
+                              Declined
+                            </span>
+                          ) : (
+                            <>
+                              <button 
+                                type="button" 
+                                className="publish-btn" 
+                                style={{ padding: '4px 14px', fontSize: '11px', borderRadius: '14px', width: 'auto', background: 'var(--accent-blue)', color: 'white' }}
+                                onClick={(e) => { e.stopPropagation(); handleAcceptFollow(notif.senderId); }}
+                              >
+                                Accept Follow
+                              </button>
+                              <button 
+                                type="button" 
+                                className="publish-btn" 
+                                style={{ padding: '4px 14px', fontSize: '11px', borderRadius: '14px', width: 'auto', background: 'rgba(255, 255, 255, 0.08)', color: 'white' }}
+                                onClick={(e) => { e.stopPropagation(); handleDeclineFollow(notif.senderId); }}
+                              >
+                                Decline
+                              </button>
+                            </>
+                          )}
                         </div>
                       )}
                     </div>

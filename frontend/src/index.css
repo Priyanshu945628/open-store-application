@@ -4414,4 +4414,20 @@ input:checked + .toggle-slider:before {
   transform: translateY(0);
 }
 
+/* Follow buttons active haptic scale feedback */
+.publish-btn:active {
+  transform: scale(0.93) !important;
+  transition: transform 0.05s ease !important;
+}
+
+/* Notification accepted badge bouncy reveal animation */
+@keyframes successBadgeGrow {
+  0% { transform: scale(0.7); opacity: 0; }
+  70% { transform: scale(1.12); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.success-badge-anim {
+  animation: successBadgeGrow 0.32s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+}
+
 
