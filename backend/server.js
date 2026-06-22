@@ -707,7 +707,7 @@ app.get('/api/posts', async (req, res) => {
   }
 });
 
-app.post('/api/posts', upload.single('media'), async (req, res) => {
+app.post('/api/posts', upload.array('media', 10), async (req, res) => {
   const { userId, type, content, githubRepo, niche, tags, collaboratorId } = req.body;
   
   if (!userId) {
@@ -720,37 +720,44 @@ app.post('/api/posts', upload.single('media'), async (req, res) => {
       return res.status(401).json({ error: "Invalid user session. Please log in again." });
     }
 
-    let mediaUrl = null;
-    let mediaName = null;
-    let mediaType = null;
+    let mediaUrls = [];
+    let mediaNames = [];
+    let mediaTypes = [];
 
-    if (req.file) {
-      mediaName = req.file.originalname;
-      mediaType = req.file.mimetype;
-      
-      console.log(`[Server] Encrypting file: ${mediaName} (${req.file.size} bytes) using custom DCBS...`);
-      const encryptedBuffer = encryptBuffer(req.file.buffer, CRYPTO_KEY);
-      
-      const ext = mediaName.split('.').pop();
-      const uniqueFilename = `file_${Date.now()}_${Math.floor(Math.random() * 1000)}.${ext}.enc`;
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        const mediaName = file.originalname;
+        const mediaType = file.mimetype;
+        
+        console.log(`[Server] Encrypting file: ${mediaName} (${file.size} bytes) using custom DCBS...`);
+        const encryptedBuffer = encryptBuffer(file.buffer, CRYPTO_KEY);
+        
+        const ext = mediaName.split('.').pop();
+        const uniqueFilename = `file_${Date.now()}_${Math.floor(Math.random() * 1000)}.${ext}.enc`;
 
-      const tgToken = process.env.TELEGRAM_BOT_TOKEN;
-      const tgChatId = process.env.TELEGRAM_CHAT_ID;
-      const useTelegram = !!(tgToken && tgChatId);
+        const tgToken = process.env.TELEGRAM_BOT_TOKEN;
+        const tgChatId = process.env.TELEGRAM_CHAT_ID;
+        const useTelegram = !!(tgToken && tgChatId);
 
-      if (useTelegram) {
-        try {
-          console.log(`[Telegram Storage] Attempting to upload encrypted ${mediaName} to Telegram Bot...`);
-          const tgRes = await uploadToTelegram(uniqueFilename, encryptedBuffer);
-          mediaUrl = `tg:${tgRes.fileId}`;
-        } catch (tgErr) {
-          console.warn(`[Telegram Storage Error] Telegram upload failed, falling back to GitHub/Mock:`, tgErr.message);
+        let mediaUrl = null;
+        if (useTelegram) {
+          try {
+            console.log(`[Telegram Storage] Attempting to upload encrypted ${mediaName} to Telegram Bot...`);
+            const tgRes = await uploadToTelegram(uniqueFilename, encryptedBuffer);
+            mediaUrl = `tg:${tgRes.fileId}`;
+          } catch (tgErr) {
+            console.warn(`[Telegram Storage Error] Telegram upload failed, falling back to GitHub/Mock:`, tgErr.message);
+            await uploadFile(uniqueFilename, encryptedBuffer);
+            mediaUrl = uniqueFilename;
+          }
+        } else {
           await uploadFile(uniqueFilename, encryptedBuffer);
           mediaUrl = uniqueFilename;
         }
-      } else {
-        await uploadFile(uniqueFilename, encryptedBuffer);
-        mediaUrl = uniqueFilename;
+
+        mediaUrls.push(mediaUrl);
+        mediaNames.push(mediaName);
+        mediaTypes.push(mediaType);
       }
     }
 
@@ -758,9 +765,9 @@ app.post('/api/posts', upload.single('media'), async (req, res) => {
       userId: parseInt(userId),
       type,
       content,
-      mediaUrl,
-      mediaName,
-      mediaType,
+      mediaUrl: mediaUrls.length > 0 ? (mediaUrls.length === 1 ? mediaUrls[0] : JSON.stringify(mediaUrls)) : null,
+      mediaName: mediaNames.length > 0 ? (mediaNames.length === 1 ? mediaNames[0] : JSON.stringify(mediaNames)) : null,
+      mediaType: mediaTypes.length > 0 ? (mediaTypes.length === 1 ? mediaTypes[0] : JSON.stringify(mediaTypes)) : null,
       githubRepo,
       niche,
       tags,

@@ -677,8 +677,9 @@ export default function App() {
 
   const [creatorType, setCreatorType] = useState('log'); // 'log' (Updates), 'vault' (Uploads), 'source' (Projects)
   const [postText, setPostText] = useState('');
-  const [githubRepo, setGithubRepo] = useState(''); // Stores repo path OR custom website URL
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [githubRepo, setGithubRepo] = useState(''); // Stores repo path OR custom website URL (legacy/fallback)
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [projectLinks, setProjectLinks] = useState([{ label: '', url: '' }]);
   const [uploading, setUploading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
@@ -1716,7 +1717,7 @@ export default function App() {
     setCreatorType('log');
     setPostText('');
     setGithubRepo('');
-    setSelectedFile(null);
+    setSelectedFiles([]);
     setUploading(false);
     setUploadProgress(null);
     setSelectedCollaborator(null);
@@ -1736,8 +1737,16 @@ export default function App() {
 
   // Creator Release
   const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) setSelectedFile(file);
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+    
+    if (creatorType === 'short') {
+      setSelectedFiles([files[0]]);
+    } else {
+      setSelectedFiles(prev => [...prev, ...files]);
+    }
+    // Clear input value so selecting the same file again triggers change event
+    e.target.value = '';
   };
 
   const triggerFileSelect = () => {
@@ -1771,7 +1780,7 @@ export default function App() {
           <button 
             type="button" 
             className={`type-tab ${creatorType === 'log' ? 'active' : ''}`} 
-            onClick={() => { setCreatorType('log'); setSelectedFile(null); setGithubRepo(''); }}
+            onClick={() => { setCreatorType('log'); setSelectedFiles([]); setGithubRepo(''); }}
           >
             <MessageSquare size={13} />
             <span>Updates</span>
@@ -1787,7 +1796,7 @@ export default function App() {
           <button 
             type="button" 
             className={`type-tab ${creatorType === 'short' ? 'active' : ''}`} 
-            onClick={() => { setCreatorType('short'); setGithubRepo(''); setSelectedFile(null); }}
+            onClick={() => { setCreatorType('short'); setGithubRepo(''); setSelectedFiles([]); }}
           >
             <Film size={13} />
             <span>Shorts</span>
@@ -1795,7 +1804,7 @@ export default function App() {
           <button 
             type="button" 
             className={`type-tab ${creatorType === 'source' ? 'active' : ''}`} 
-            onClick={() => { setCreatorType('source'); setSelectedFile(null); }}
+            onClick={() => { setCreatorType('source'); setSelectedFiles([]); }}
           >
             <FileCode size={13} />
             <span>Projects</span>
@@ -1804,54 +1813,111 @@ export default function App() {
 
         {/* DYNAMIC SUB-INPUTS */}
         {creatorType === 'source' && (
-          <div className="attachment-container">
-            <div className="repo-input-wrapper">
-              <input 
-                type="text" 
-                placeholder="e.g. facebook/react OR https://example.com" 
-                value={githubRepo}
-                onChange={(e) => setGithubRepo(e.target.value)}
-                required
-                style={{ width: '100%', paddingLeft: '8px' }}
-              />
-            </div>
+          <div className="attachment-container" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {projectLinks.map((link, idx) => (
+              <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input 
+                  type="text" 
+                  placeholder="Label (e.g. Frontend, Live App)" 
+                  value={link.label}
+                  onChange={(e) => {
+                    const newLinks = [...projectLinks];
+                    newLinks[idx].label = e.target.value;
+                    setProjectLinks(newLinks);
+                  }}
+                  style={{ flex: 1, padding: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'white', fontSize: '12px' }}
+                />
+                <input 
+                  type="text" 
+                  placeholder="URL or GitHub repo path" 
+                  value={link.url}
+                  onChange={(e) => {
+                    const newLinks = [...projectLinks];
+                    newLinks[idx].url = e.target.value;
+                    setProjectLinks(newLinks);
+                  }}
+                  required
+                  style={{ flex: 2, padding: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'white', fontSize: '12px' }}
+                />
+                {projectLinks.length > 1 && (
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setProjectLinks(projectLinks.filter((_, i) => i !== idx));
+                    }}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--text-danger)', fontSize: '16px', cursor: 'pointer', padding: '0 4px' }}
+                  >
+                    &times;
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setProjectLinks([...projectLinks, { label: '', url: '' }])}
+              style={{
+                alignSelf: 'flex-start',
+                fontSize: '11px',
+                padding: '4px 8px',
+                borderRadius: '6px',
+                border: '1px dashed var(--border-color)',
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                marginTop: '4px'
+              }}
+            >
+              + Add Link
+            </button>
           </div>
         )}
 
         {(creatorType === 'vault' || creatorType === 'short') && (
-          <div className="attachment-container">
+          <div className="attachment-container" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <input 
               type="file" 
               ref={fileInputRef} 
               onChange={handleFileChange} 
               accept={creatorType === 'short' ? "video/*" : "image/*,video/*"}
+              multiple={creatorType !== 'short'}
               style={{ display: 'none' }}
             />
             
-            {!selectedFile ? (
+            {(creatorType !== 'short' || selectedFiles.length === 0) && (
               <div className="file-upload-zone" onClick={triggerFileSelect}>
                 <Plus size={20} className="text-secondary" style={{ marginBottom: '4px' }} />
                 <div style={{ fontSize: '13px', fontWeight: '500' }}>
-                  {creatorType === 'short' ? "Select Short Video (.mp4 / .webm)" : "Select Secure Document / File"}
+                  {creatorType === 'short' ? "Select Short Video (.mp4 / .webm)" : "Select Secure Document(s) / File(s)"}
                 </div>
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                   {creatorType === 'short' ? "Vertical video works best for mobile/looper view" : "Files are securely stored in your workspace"}
                 </div>
               </div>
-            ) : (
-              <div className="file-preview">
-                <div className="preview-info">
-                  <span className="preview-icon">
-                    {selectedFile.type.startsWith('video/') ? '🎥' : '🖼️'}
-                  </span>
-                  <div className="preview-details">
-                    <span className="preview-name">{selectedFile.name}</span>
-                    <span className="preview-size">{(selectedFile.size / (1024 * 1024)).toFixed(2)} MB</span>
+            )}
+            
+            {selectedFiles.length > 0 && (
+              <div className="selected-files-list" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {selectedFiles.map((file, idx) => (
+                  <div key={idx} className="file-preview" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <div className="preview-info" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <span className="preview-icon">
+                        {file.type && file.type.startsWith('video/') ? '🎥' : '🖼️'}
+                      </span>
+                      <div className="preview-details" style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', minWidth: 0 }}>
+                        <span className="preview-name" style={{ fontSize: '12px', fontWeight: '500', color: 'white', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                        <span className="preview-size" style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{(file.size / (1024 * 1024)).toFixed(2)} MB</span>
+                      </div>
+                    </div>
+                    <button 
+                      type="button" 
+                      className="remove-file-btn" 
+                      onClick={() => setSelectedFiles(selectedFiles.filter((_, i) => i !== idx))}
+                      style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '16px', cursor: 'pointer' }}
+                    >
+                      &times;
+                    </button>
                   </div>
-                </div>
-                <button type="button" className="remove-file-btn" onClick={() => setSelectedFile(null)}>
-                  &times;
-                </button>
+                ))}
               </div>
             )}
           </div>
@@ -1944,7 +2010,7 @@ export default function App() {
             type="button" 
             className="publish-btn" 
             onClick={handleRelease}
-            disabled={uploading || (!postText.trim() && !selectedFile && !githubRepo)}
+            disabled={uploading || (!postText.trim() && selectedFiles.length === 0 && !projectLinks.some(l => l.url.trim() !== ''))}
           >
             {uploading ? 'Uploading...' : 'Release'}
           </button>
@@ -1955,7 +2021,8 @@ export default function App() {
 
   const handleRelease = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
-    if (!postText.trim() && !selectedFile && !githubRepo) return;
+    const hasLinks = projectLinks.some(l => l.url.trim() !== '');
+    if (!postText.trim() && selectedFiles.length === 0 && !hasLinks) return;
 
     setUploading(true);
     setUploadProgress(0);
@@ -1973,10 +2040,16 @@ export default function App() {
         formData.append('collaboratorId', selectedCollaborator.id);
       }
 
-      if ((creatorType === 'vault' || creatorType === 'short') && selectedFile) {
-        formData.append('media', selectedFile);
-      } else if (creatorType === 'source' && githubRepo) {
-        formData.append('githubRepo', githubRepo.trim());
+      if ((creatorType === 'vault' || creatorType === 'short') && selectedFiles.length > 0) {
+        selectedFiles.forEach(file => {
+          formData.append('media', file);
+        });
+      } else if (creatorType === 'source' && hasLinks) {
+        const filteredLinks = projectLinks.filter(l => l.url.trim() !== '').map(l => ({
+          label: l.label.trim() || 'Link',
+          url: l.url.trim()
+        }));
+        formData.append('githubRepo', JSON.stringify(filteredLinks));
       }
 
       const xhr = new XMLHttpRequest();
@@ -1995,7 +2068,8 @@ export default function App() {
         if (xhr.status >= 200 && xhr.status < 300) {
           setPostText('');
           setGithubRepo('');
-          setSelectedFile(null);
+          setProjectLinks([{ label: '', url: '' }]);
+          setSelectedFiles([]);
           setSelectedCollaborator(null);
           setShowUploadDrawer(false);
           await fetchPosts();
@@ -2803,6 +2877,171 @@ export default function App() {
       }
     }
   };
+
+  const parseDbField = (fieldValue) => {
+    if (!fieldValue) return [];
+    if (typeof fieldValue === 'string' && fieldValue.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(fieldValue);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {
+        // ignore
+      }
+    }
+    return [fieldValue];
+  };
+
+  const parseProjectLinks = (githubRepo) => {
+    if (!githubRepo) return [];
+    if (typeof githubRepo === 'string' && githubRepo.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(githubRepo);
+        if (Array.isArray(parsed)) {
+          return parsed.map(link => {
+            if (typeof link === 'string') {
+              return { label: 'Link', url: link };
+            }
+            return { label: link.label || 'Link', url: link.url || '' };
+          }).filter(link => link.url);
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    if (typeof githubRepo === 'string' && githubRepo.trim() !== '') {
+      return [{ label: 'Project Link', url: githubRepo.trim() }];
+    }
+    return [];
+  };
+
+  const getAbsoluteUrl = (url) => {
+    if (!url) return '';
+    if (url.includes('github.com') || (!url.startsWith('http') && url.split('/').length === 2)) {
+      const cleanRepoPath = url.includes('github.com') ? url.split('github.com/').pop() : url;
+      return `https://github.com/${cleanRepoPath}`;
+    }
+    if (!url.startsWith('http') && !url.startsWith('//')) {
+      return `https://${url}`;
+    }
+    return url;
+  };
+
+  function VaultFilesRenderer({ post }) {
+    const urls = parseDbField(post.mediaUrl);
+    const names = parseDbField(post.mediaName);
+    const types = parseDbField(post.mediaType);
+
+    const files = urls.map((url, index) => ({
+      url,
+      name: names[index] || `file_${index}`,
+      type: types[index] || 'application/octet-stream'
+    })).filter(f => f.url);
+
+    if (files.length === 0) return null;
+
+    return (
+      <div className="vault-files-container" style={{ display: 'flex', flexDirection: 'column', gap: '12px', margin: '12px 0' }}>
+        {files.map((file, idx) => {
+          const isVideo = file.type && file.type.startsWith('video/');
+          const isImage = file.type && file.type.startsWith('image/');
+          const fileUrl = `${BACKEND_BASE}/api/files/download/${file.url}`;
+
+          return (
+            <div key={idx} className="vault-file-item glass-card" style={{ padding: '12px', border: '1px solid var(--border-color)', borderRadius: '8px', background: 'rgba(255,255,255,0.01)' }}>
+              {(isVideo || isImage) && (
+                <div className="encrypted-media-box" style={{ marginBottom: '10px' }} onClick={(e) => e.stopPropagation()}>
+                  {isVideo ? (
+                    <video 
+                      className="media-video" 
+                      src={fileUrl} 
+                      controls
+                      preload="metadata"
+                      style={{ width: '100%', maxHeight: '200px', objectFit: 'contain' }}
+                    />
+                  ) : (
+                    <img 
+                      className="media-image" 
+                      src={fileUrl} 
+                      alt={file.name}
+                      loading="lazy"
+                      style={{ cursor: 'pointer', width: '100%', maxHeight: '200px', objectFit: 'contain' }}
+                      onClick={() => setLightboxImage(fileUrl)}
+                    />
+                  )}
+                </div>
+              )}
+              
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }} onClick={(e) => e.stopPropagation()}>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '2px', textAlign: 'left', minWidth: 0, flex: 1 }}>
+                  <div style={{ color: 'white', fontWeight: '500', wordBreak: 'break-all', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Filename: {file.name}</div>
+                  <div>Type: {file.type || 'file'}</div>
+                </div>
+                
+                <a 
+                  href={fileUrl} 
+                  download={file.name}
+                  className="publish-btn" 
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    gap: '4px', 
+                    textDecoration: 'none', 
+                    fontSize: '11px', 
+                    padding: '6px 12px',
+                    height: 'fit-content'
+                  }}
+                >
+                  <Shield size={11} /> Unlock & Download
+                </a>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function ProjectLinksRenderer({ githubRepo }) {
+    const links = parseProjectLinks(githubRepo);
+    const [activeTab, setActiveTab] = useState(0);
+
+    if (links.length === 0) return null;
+
+    return (
+      <div className="project-links-renderer" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {links.length > 1 && (
+          <div className="project-links-tabs" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '4px' }}>
+            {links.map((link, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveTab(idx);
+                }}
+                style={{
+                  fontSize: '11px',
+                  padding: '4px 10px',
+                  borderRadius: '12px',
+                  border: '1px solid var(--border-color)',
+                  background: activeTab === idx ? 'var(--accent-blue)' : 'rgba(255,255,255,0.03)',
+                  color: activeTab === idx ? 'white' : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                {link.label}
+              </button>
+            ))}
+          </div>
+        )}
+        <div onClick={(e) => e.stopPropagation()}>
+          <ProjectSourcePreview url={links[activeTab]?.url || ''} />
+        </div>
+      </div>
+    );
+  }
 
   // Render components for website vs github source link
   function ProjectSourcePreview({ url }) {
@@ -4089,25 +4328,35 @@ export default function App() {
                 <p style={{ color: 'var(--text-secondary)', fontSize: '12.5px' }}>No secure uploads match this query.</p>
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px' }}>
-                  {searchResults.posts.filter(p => p.type === 'vault').map(post => (
-                    <div key={post.id} className="glass-card" style={{ padding: '12px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '8px', textAlign: 'left' }}>
-                      <div>
-                        <span style={{ fontSize: '11px', fontWeight: 'bold' }}>
-                          @{post.username}
-                          {post.collaboratorName && <span style={{ color: 'var(--accent-blue)', marginLeft: 6, fontWeight: 500 }}>with @{post.collaboratorName}</span>}
-                        </span>
-                        {post.content && <p style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '4px' }}>{post.content}</p>}
-                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '6px' }}>Name: {post.mediaName}</div>
+                  {searchResults.posts.filter(p => p.type === 'vault').map(post => {
+                    const urls = parseDbField(post.mediaUrl);
+                    const names = parseDbField(post.mediaName);
+                    return (
+                      <div key={post.id} className="glass-card" style={{ padding: '12px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '8px', textAlign: 'left' }}>
+                        <div>
+                          <span style={{ fontSize: '11px', fontWeight: 'bold' }}>
+                            @{post.username}
+                            {post.collaboratorName && <span style={{ color: 'var(--accent-blue)', marginLeft: 6, fontWeight: 500 }}>with @{post.collaboratorName}</span>}
+                          </span>
+                          {post.content && <p style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '4px' }}>{post.content}</p>}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px' }}>
+                            {urls.map((url, index) => (
+                              <div key={index} style={{ display: 'flex', flexDirection: 'column', gap: '2px', borderTop: index > 0 ? '1px solid var(--border-color)' : 'none', paddingTop: index > 0 ? '6px' : '0' }}>
+                                <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Name: {names[index] || `file_${index}`}</div>
+                                <a 
+                                  href={`${BACKEND_BASE}/api/files/download/${url}`} 
+                                  className="publish-btn" 
+                                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', textDecoration: 'none', fontSize: '10.5px', padding: '4px 0', marginTop: '4px' }}
+                                >
+                                  <Shield size={10} /> Download
+                                </a>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       </div>
-                      <a 
-                        href={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} 
-                        className="publish-btn" 
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', textDecoration: 'none', fontSize: '10.5px', padding: '4px 0' }}
-                      >
-                        <Shield size={10} /> Download
-                      </a>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -4121,20 +4370,33 @@ export default function App() {
                 <p style={{ color: 'var(--text-secondary)', fontSize: '12.5px' }}>No project repositories match this query.</p>
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
-                  {searchResults.posts.filter(p => p.type === 'source').map(post => (
-                    <div key={post.id} className="glass-card" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px', textAlign: 'left' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '11.5px', fontWeight: 'bold' }}>
-                          @{post.username}
-                          {post.collaboratorName && <span style={{ color: 'var(--accent-blue)', marginLeft: 6, fontWeight: 500 }}>with @{post.collaboratorName}</span>}
-                        </span>
-                        <a href={post.githubRepo} target="_blank" rel="noreferrer" style={{ fontSize: '10.5px', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: '2px', textDecoration: 'underline' }}>
-                          Repo Link <ExternalLink size={10} />
-                        </a>
+                  {searchResults.posts.filter(p => p.type === 'source').map(post => {
+                    const links = parseProjectLinks(post.githubRepo);
+                    return (
+                      <div key={post.id} className="glass-card" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px', textAlign: 'left' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexDirection: 'column', gap: '8px' }}>
+                          <span style={{ fontSize: '11.5px', fontWeight: 'bold' }}>
+                            @{post.username}
+                            {post.collaboratorName && <span style={{ color: 'var(--accent-blue)', marginLeft: 6, fontWeight: 500 }}>with @{post.collaboratorName}</span>}
+                          </span>
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            {links.map((link, idx) => (
+                              <a 
+                                key={idx} 
+                                href={getAbsoluteUrl(link.url)} 
+                                target="_blank" 
+                                rel="noreferrer" 
+                                style={{ fontSize: '10.5px', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: '2px', textDecoration: 'underline' }}
+                              >
+                                {link.label} <ExternalLink size={10} />
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                        {post.content && <p style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>{post.content}</p>}
                       </div>
-                      {post.content && <p style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>{post.content}</p>}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -4287,34 +4549,14 @@ export default function App() {
                     {post.content && <div className="post-content">{post.content}</div>}
 
                     {/* Vault uploaded media */}
+                    {/* Vault uploaded media */}
                     {post.type === 'vault' && post.mediaUrl && (
-                      <div className="encrypted-media-box" onClick={(e) => e.stopPropagation()}>
-                        {post.mediaType && post.mediaType.startsWith('video/') ? (
-                          <video 
-                            className="media-video" 
-                            src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} 
-                            controls
-                            preload="metadata"
-                            onTimeUpdate={(e) => handleVideoTimeUpdate(e, post.id)}
-                          />
-                        ) : (
-                          <img 
-                            className="media-image" 
-                            src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} 
-                            alt={post.mediaName}
-                            loading="lazy"
-                            style={{ cursor: 'pointer' }}
-                            onClick={() => setLightboxImage(`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`)}
-                          />
-                        )}
-                      </div>
+                      <VaultFilesRenderer post={post} />
                     )}
 
                     {/* Project/Website Live Frame Port */}
                     {post.type === 'source' && post.githubRepo && (
-                      <div onClick={(e) => e.stopPropagation()}>
-                        <ProjectSourcePreview url={post.githubRepo} />
-                      </div>
+                      <ProjectLinksRenderer githubRepo={post.githubRepo} />
                     )}
 
                     {/* Post Actions: Like, Comment, Share */}
@@ -4949,28 +5191,34 @@ export default function App() {
                   onChange={(e) => setPostText(e.target.value)}
                 />
               </div>
-              <div className="attachment-container">
+              <div className="attachment-container" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <input 
                   type="file" 
                   ref={fileInputRef} 
                   onChange={handleFileChange} 
                   accept="image/*,video/*"
+                  multiple
                   style={{ display: 'none' }}
                 />
-                {!selectedFile ? (
-                  <div className="file-upload-zone" onClick={triggerFileSelect}>
-                    <Plus size={20} className="text-secondary" style={{ marginBottom: '4px' }} />
-                    <div style={{ fontSize: '13px', fontWeight: '500' }}>Select Secure Document / File</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Bit-scrambled with chaotic maps prior to upload</div>
-                  </div>
-                ) : (
-                  <div className="file-preview">
-                    <span className="preview-icon">{selectedFile.type.startsWith('video/') ? '🎥' : '🖼️'}</span>
-                    <div className="preview-details">
-                      <span className="preview-name">{selectedFile.name}</span>
-                      <span className="preview-size">{(selectedFile.size / (1024 * 1024)).toFixed(2)} MB</span>
-                    </div>
-                    <button type="button" className="remove-file-btn" onClick={() => setSelectedFile(null)}>&times;</button>
+                <div className="file-upload-zone" onClick={triggerFileSelect}>
+                  <Plus size={20} className="text-secondary" style={{ marginBottom: '4px' }} />
+                  <div style={{ fontSize: '13px', fontWeight: '500' }}>Select Secure Document(s) / File(s)</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Bit-scrambled with chaotic maps prior to upload</div>
+                </div>
+                {selectedFiles.length > 0 && (
+                  <div className="selected-files-list" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {selectedFiles.map((file, idx) => (
+                      <div key={idx} className="file-preview" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                        <div className="preview-info" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <span className="preview-icon">{file.type && file.type.startsWith('video/') ? '🎥' : '🖼️'}</span>
+                          <div className="preview-details" style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', minWidth: 0 }}>
+                            <span className="preview-name" style={{ fontSize: '12px', fontWeight: '500', color: 'white', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                            <span className="preview-size" style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{(file.size / (1024 * 1024)).toFixed(2)} MB</span>
+                          </div>
+                        </div>
+                        <button type="button" className="remove-file-btn" onClick={() => setSelectedFiles(selectedFiles.filter((_, i) => i !== idx))}>&times;</button>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -4981,7 +5229,7 @@ export default function App() {
                   type="button" 
                   className="publish-btn" 
                   onClick={(e) => { setCreatorType('vault'); handleRelease(e); }}
-                  disabled={uploading || !selectedFile}
+                  disabled={uploading || selectedFiles.length === 0}
                 >
                   {uploading ? 'Encrypting...' : 'Lock File in Vault'}
                 </button>
@@ -5014,29 +5262,10 @@ export default function App() {
                       
                       {post.content && <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '10px' }}>{post.content}</p>}
                       
-                      <div className="encrypted-media-box" style={{ margin: '8px 0' }}>
-                        {post.mediaType && post.mediaType.startsWith('video/') ? (
-                          <video src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} style={{ width: '100%', maxHeight: '150px', objectFit: 'contain' }} controls onTimeUpdate={(e) => handleVideoTimeUpdate(e, post.id)} />
-                        ) : (
-                          <img src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} style={{ width: '100%', maxHeight: '150px', objectFit: 'contain', cursor: 'pointer' }} alt="" onClick={() => setLightboxImage(`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`)} />
-                        )}
-                      </div>
-                      
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '8px 0', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <div>Filename: {post.mediaName}</div>
-                        <div>Size: {(post.mediaType) || 'file'}</div>
-                      </div>
+                      <VaultFilesRenderer post={post} />
                     </div>
 
                     <div>
-                      <a 
-                        href={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} 
-                        download={post.mediaName}
-                        className="publish-btn" 
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', width: '100%', textDecoration: 'none', fontSize: '12px', padding: '6px', margin: '8px 0' }}
-                      >
-                        <Shield size={11} /> Unlock & Download
-                      </a>
                       
                       <div className="post-actions" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '8px', marginTop: '8px' }}>
                         <button className="action-btn" onClick={() => handleLike(post.id)}>
@@ -5068,15 +5297,62 @@ export default function App() {
                   onChange={(e) => setPostText(e.target.value)}
                 />
               </div>
-              <div className="attachment-container">
-                <input 
-                  type="text" 
-                  placeholder="Paste URL link (e.g. facebook/react OR https://my-portfolio-site.com)" 
-                  value={githubRepo}
-                  onChange={(e) => setGithubRepo(e.target.value)}
-                  required
-                  style={{ width: '100%', padding: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'white' }}
-                />
+              <div className="attachment-container" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {projectLinks.map((link, idx) => (
+                  <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input 
+                      type="text" 
+                      placeholder="Label (e.g. Frontend, Live App)" 
+                      value={link.label}
+                      onChange={(e) => {
+                        const newLinks = [...projectLinks];
+                        newLinks[idx].label = e.target.value;
+                        setProjectLinks(newLinks);
+                      }}
+                      style={{ flex: 1, padding: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'white', fontSize: '12px' }}
+                    />
+                    <input 
+                      type="text" 
+                      placeholder="URL or GitHub repo path" 
+                      value={link.url}
+                      onChange={(e) => {
+                        const newLinks = [...projectLinks];
+                        newLinks[idx].url = e.target.value;
+                        setProjectLinks(newLinks);
+                      }}
+                      required
+                      style={{ flex: 2, padding: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'white', fontSize: '12px' }}
+                    />
+                    {projectLinks.length > 1 && (
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          setProjectLinks(projectLinks.filter((_, i) => i !== idx));
+                        }}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--text-danger)', fontSize: '16px', cursor: 'pointer', padding: '0 4px' }}
+                      >
+                        &times;
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setProjectLinks([...projectLinks, { label: '', url: '' }])}
+                  style={{
+                    alignSelf: 'flex-start',
+                    fontSize: '11px',
+                    padding: '4px 8px',
+                    borderRadius: '6px',
+                    border: '1px dashed var(--border-color)',
+                    background: 'transparent',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    marginTop: '4px'
+                  }}
+                >
+                  + Add Link
+                </button>
               </div>
               <div className="creator-footer">
                 <div style={{ flex: 1 }} />
@@ -5084,7 +5360,7 @@ export default function App() {
                   type="button" 
                   className="publish-btn" 
                   onClick={(e) => { setCreatorType('source'); handleRelease(e); }}
-                  disabled={uploading || !githubRepo}
+                  disabled={uploading || !projectLinks.some(l => l.url.trim() !== '')}
                 >
                   {uploading ? 'Releasing...' : 'Release Project'}
                 </button>
@@ -5134,7 +5410,7 @@ export default function App() {
                       
                       {post.githubRepo && (
                         <div onClick={(e) => e.stopPropagation()}>
-                          <ProjectSourcePreview url={post.githubRepo} />
+                          <ProjectLinksRenderer githubRepo={post.githubRepo} />
                         </div>
                       )}
                     </div>
@@ -5193,7 +5469,7 @@ export default function App() {
                       
                       <div style={{ position: 'relative', height: '180px', background: '#000', borderRadius: '8px', overflow: 'hidden' }}>
                         <img 
-                          src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} 
+                          src={`${BACKEND_BASE}/api/files/download/${parseDbField(post.mediaUrl)[0]}`} 
                           style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                           alt={post.mediaName}
                           loading="lazy"
@@ -5252,7 +5528,7 @@ export default function App() {
                       
                       <div style={{ position: 'relative', height: '180px', background: '#000', borderRadius: '8px', overflow: 'hidden' }}>
                         <video 
-                          src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} 
+                          src={`${BACKEND_BASE}/api/files/download/${parseDbField(post.mediaUrl)[0]}`} 
                           style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
                           controls
                           preload="metadata"
@@ -5358,32 +5634,14 @@ export default function App() {
                     {post.content && <div className="post-content">{post.content}</div>}
 
                     {/* Vault uploaded media */}
+                    {/* Vault uploaded media */}
                     {post.type === 'vault' && post.mediaUrl && (
-                      <div className="encrypted-media-box" onClick={(e) => e.stopPropagation()}>
-                        {post.mediaType && post.mediaType.startsWith('video/') ? (
-                          <video 
-                            className="media-video" 
-                            src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} 
-                            controls
-                            preload="metadata"
-                            onTimeUpdate={(e) => handleVideoTimeUpdate(e, post.id)}
-                          />
-                        ) : (
-                          <img 
-                            className="media-image" 
-                            src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} 
-                            alt={post.mediaName}
-                            loading="lazy"
-                          />
-                        )}
-                      </div>
+                      <VaultFilesRenderer post={post} />
                     )}
 
                     {/* Project/Website Live Frame Port */}
                     {post.type === 'source' && post.githubRepo && (
-                      <div onClick={(e) => e.stopPropagation()}>
-                        <ProjectSourcePreview url={post.githubRepo} />
-                      </div>
+                      <ProjectLinksRenderer githubRepo={post.githubRepo} />
                     )}
 
                     {/* Post Actions: Like, Comment, Share, Save */}
@@ -5529,30 +5787,15 @@ export default function App() {
 
                     {/* Vault uploaded media (Decrypted via stream endpoint) */}
                     {post.type === 'vault' && post.mediaUrl && (
-                      <div className="encrypted-media-box" onClick={(e) => e.stopPropagation()}>
-                        {post.mediaType && post.mediaType.startsWith('video/') ? (
-                          <video 
-                            className="media-video" 
-                            src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} 
-                            controls
-                            preload="metadata"
-                            onTimeUpdate={(e) => handleVideoTimeUpdate(e, post.id)}
-                          />
-                        ) : (
-                          <img 
-                            className="media-image" 
-                            src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} 
-                            alt={post.mediaName}
-                            loading="lazy"
-                          />
-                        )}
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <VaultFilesRenderer post={post} />
                       </div>
                     )}
 
                     {/* Project/Website Live Frame Port */}
                     {post.type === 'source' && post.githubRepo && (
                       <div onClick={(e) => e.stopPropagation()}>
-                        <ProjectSourcePreview url={post.githubRepo} />
+                        <ProjectLinksRenderer githubRepo={post.githubRepo} />
                       </div>
                     )}
 
@@ -5900,28 +6143,11 @@ export default function App() {
                         {post.content && <div className="post-content">{post.content}</div>}
 
                         {post.type === 'vault' && post.mediaUrl && (
-                          <div className="encrypted-media-box">
-                            {post.mediaType && post.mediaType.startsWith('video/') ? (
-                              <video 
-                                className="media-video" 
-                                src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} 
-                                controls
-                                preload="metadata"
-                                onTimeUpdate={(e) => handleVideoTimeUpdate(e, post.id)}
-                              />
-                            ) : (
-                              <img 
-                                className="media-image" 
-                                src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} 
-                                alt={post.mediaName}
-                                loading="lazy"
-                              />
-                            )}
-                          </div>
+                          <VaultFilesRenderer post={post} />
                         )}
 
                         {post.type === 'source' && post.githubRepo && (
-                          <ProjectSourcePreview url={post.githubRepo} />
+                          <ProjectLinksRenderer githubRepo={post.githubRepo} />
                         )}
 
                         <div className="post-actions" style={{ position: 'relative' }}>
@@ -5955,15 +6181,62 @@ export default function App() {
                           onChange={(e) => setPostText(e.target.value)}
                         />
                       </div>
-                      <div className="attachment-container">
-                        <input 
-                          type="text" 
-                          placeholder="Paste URL link (e.g. facebook/react OR https://my-portfolio-site.com)" 
-                          value={githubRepo}
-                          onChange={(e) => setGithubRepo(e.target.value)}
-                          required
-                          style={{ width: '100%', padding: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'white' }}
-                        />
+                      <div className="attachment-container" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {projectLinks.map((link, idx) => (
+                          <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <input 
+                              type="text" 
+                              placeholder="Label (e.g. Frontend, Live App)" 
+                              value={link.label}
+                              onChange={(e) => {
+                                const newLinks = [...projectLinks];
+                                newLinks[idx].label = e.target.value;
+                                setProjectLinks(newLinks);
+                              }}
+                              style={{ flex: 1, padding: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'white', fontSize: '12px' }}
+                            />
+                            <input 
+                              type="text" 
+                              placeholder="URL or GitHub repo path" 
+                              value={link.url}
+                              onChange={(e) => {
+                                const newLinks = [...projectLinks];
+                                newLinks[idx].url = e.target.value;
+                                setProjectLinks(newLinks);
+                              }}
+                              required
+                              style={{ flex: 2, padding: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'white', fontSize: '12px' }}
+                            />
+                            {projectLinks.length > 1 && (
+                              <button 
+                                type="button" 
+                                onClick={() => {
+                                  setProjectLinks(projectLinks.filter((_, i) => i !== idx));
+                                }}
+                                style={{ background: 'transparent', border: 'none', color: 'var(--text-danger)', fontSize: '16px', cursor: 'pointer', padding: '0 4px' }}
+                              >
+                                &times;
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setProjectLinks([...projectLinks, { label: '', url: '' }])}
+                          style={{
+                            alignSelf: 'flex-start',
+                            fontSize: '11px',
+                            padding: '4px 8px',
+                            borderRadius: '6px',
+                            border: '1px dashed var(--border-color)',
+                            background: 'transparent',
+                            color: 'var(--text-secondary)',
+                            cursor: 'pointer',
+                            marginTop: '4px'
+                          }}
+                        >
+                          + Add Link
+                        </button>
                       </div>
                       <div className="creator-footer">
                         <div style={{ flex: 1 }} />
@@ -5971,7 +6244,7 @@ export default function App() {
                           type="button" 
                           className="publish-btn" 
                           onClick={(e) => { setCreatorType('source'); handleRelease(e); }}
-                          disabled={uploading || !githubRepo}
+                          disabled={uploading || !projectLinks.some(l => l.url.trim() !== '')}
                         >
                           {uploading ? 'Releasing...' : 'Release Project'}
                         </button>
@@ -6005,7 +6278,7 @@ export default function App() {
                             
                             {post.content && <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '14px' }}>{post.content}</p>}
                             
-                            <ProjectSourcePreview url={post.githubRepo} />
+                            <ProjectLinksRenderer githubRepo={post.githubRepo} />
                           </div>
                           
                           <div style={{ marginTop: '16px' }}>
@@ -6133,28 +6406,34 @@ export default function App() {
                         onChange={(e) => setPostText(e.target.value)}
                       />
                     </div>
-                    <div className="attachment-container">
+                    <div className="attachment-container" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       <input 
                         type="file" 
                         ref={fileInputRef} 
                         onChange={handleFileChange} 
                         accept="image/*,video/*"
+                        multiple
                         style={{ display: 'none' }}
                       />
-                      {!selectedFile ? (
-                        <div className="file-upload-zone" onClick={triggerFileSelect}>
-                          <Plus size={20} className="text-secondary" style={{ marginBottom: '4px' }} />
-                          <div style={{ fontSize: '13px', fontWeight: '500' }}>Select Secure Document / File</div>
-                          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Bit-scrambled with chaotic maps prior to upload</div>
-                        </div>
-                      ) : (
-                        <div className="file-preview">
-                          <span className="preview-icon">{selectedFile.type.startsWith('video/') ? '🎥' : '🖼️'}</span>
-                          <div className="preview-details">
-                            <span className="preview-name">{selectedFile.name}</span>
-                            <span className="preview-size">{(selectedFile.size / (1024 * 1024)).toFixed(2)} MB</span>
-                          </div>
-                          <button type="button" className="remove-file-btn" onClick={() => setSelectedFile(null)}>&times;</button>
+                      <div className="file-upload-zone" onClick={triggerFileSelect}>
+                        <Plus size={20} className="text-secondary" style={{ marginBottom: '4px' }} />
+                        <div style={{ fontSize: '13px', fontWeight: '500' }}>Select Secure Document(s) / File(s)</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Bit-scrambled with chaotic maps prior to upload</div>
+                      </div>
+                      {selectedFiles.length > 0 && (
+                        <div className="selected-files-list" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {selectedFiles.map((file, idx) => (
+                            <div key={idx} className="file-preview" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                              <div className="preview-info" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <span className="preview-icon">{file.type && file.type.startsWith('video/') ? '🎥' : '🖼️'}</span>
+                                <div className="preview-details" style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', minWidth: 0 }}>
+                                  <span className="preview-name" style={{ fontSize: '12px', fontWeight: '500', color: 'white', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                                  <span className="preview-size" style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{(file.size / (1024 * 1024)).toFixed(2)} MB</span>
+                                </div>
+                              </div>
+                              <button type="button" className="remove-file-btn" onClick={() => setSelectedFiles(selectedFiles.filter((_, i) => i !== idx))}>&times;</button>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -6165,7 +6444,7 @@ export default function App() {
                         type="button" 
                         className="publish-btn" 
                         onClick={(e) => { setCreatorType('vault'); handleRelease(e); }}
-                        disabled={uploading || !selectedFile}
+                        disabled={uploading || selectedFiles.length === 0}
                       >
                         {uploading ? 'Encrypting...' : 'Lock File in Vault'}
                       </button>
@@ -6198,27 +6477,7 @@ export default function App() {
                             
                             {post.content && <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '10px' }}>{post.content}</p>}
                             
-                            <div className="encrypted-media-box" style={{ margin: '8px 0' }}>
-                              {post.mediaType && post.mediaType.startsWith('video/') ? (
-                                <video src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} style={{ width: '100%', maxHeight: '150px', objectFit: 'contain' }} controls onTimeUpdate={(e) => handleVideoTimeUpdate(e, post.id)} />
-                              ) : (
-                                <img src={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} style={{ width: '100%', maxHeight: '150px', objectFit: 'contain', cursor: 'pointer' }} alt="" onClick={() => setLightboxImage(`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`)} />
-                              )}
-                            </div>
-                            
-                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '8px 0', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                              <div>Filename: {post.mediaName}</div>
-                              <div>Size: {(post.mediaType) || 'file'}</div>
-                            </div>
-                            
-                            <a 
-                              href={`${BACKEND_BASE}/api/files/download/${post.mediaUrl}`} 
-                              download={post.mediaName}
-                              className="publish-btn" 
-                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', textDecoration: 'none', fontSize: '11px', padding: '6px 0' }}
-                            >
-                              <Shield size={11} /> Unlock & Download
-                            </a>
+                            <VaultFilesRenderer post={post} />
                           </div>
 
                           <div>
@@ -6444,25 +6703,13 @@ export default function App() {
           {/* Media Player/Preview */}
           {activeDetailsPost.mediaUrl && (
             <div className="details-media-container" style={{ width: '100%' }}>
-              {activeDetailsPost.mediaType && activeDetailsPost.mediaType.startsWith('video/') ? (
-                <video 
-                  key={activeDetailsPost.id}
-                  className="details-video-player"
-                  src={`${BACKEND_BASE}/api/files/download/${activeDetailsPost.mediaUrl}`} 
-                  controls
-                  autoPlay={false}
-                  preload="metadata"
-                  onTimeUpdate={(e) => handleVideoTimeUpdate(e, activeDetailsPost.id)}
-                />
-              ) : (
-                <img 
-                  className="details-image-preview" 
-                  src={`${BACKEND_BASE}/api/files/download/${activeDetailsPost.mediaUrl}`} 
-                  alt={activeDetailsPost.mediaName || 'Post media'} 
-                  style={{ width: '100%', borderRadius: 'var(--radius-sm)', objectFit: 'cover', maxHeight: '200px', cursor: 'pointer' }}
-                  onClick={() => setLightboxImage(`${BACKEND_BASE}/api/files/download/${activeDetailsPost.mediaUrl}`)}
-                />
-              )}
+              <VaultFilesRenderer post={activeDetailsPost} />
+            </div>
+          )}
+
+          {activeDetailsPost.githubRepo && (
+            <div style={{ padding: '0 4px' }}>
+              <ProjectLinksRenderer githubRepo={activeDetailsPost.githubRepo} />
             </div>
           )}
 
@@ -6513,7 +6760,7 @@ export default function App() {
                   >
                     {similarPost.mediaUrl ? (
                       <img 
-                        src={`${BACKEND_BASE}/api/files/download/${similarPost.mediaUrl}`} 
+                        src={`${BACKEND_BASE}/api/files/download/${parseDbField(similarPost.mediaUrl)[0]}`} 
                         alt="thumbnail" 
                         className="details-similar-thumb"
                         style={{ width: '50px', height: '35px', borderRadius: '4px', objectFit: 'cover' }}
