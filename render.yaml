@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: open-store-backend
+    runtime: node
+    plan: free
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && node src/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: JWT_SECRET
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_DB_CHAT
+        sync: false
+      - key: TELEGRAM_MEDIA_CHAT
+        sync: false
+      - key: CORS_ORIGIN
+        value: https://open-store-five.vercel.app,https://open-store.vercel.app
