@@ -1,0 +1,8 @@
+node_modules
+frontend
+admin-panel
+Assests
+*.md
+*.log
+.git
+.vercel

@@ -25,8 +25,15 @@ const storageMode =
 console.log(`  Storage: ${storageMode}`);
 
 const app = express();
+const allowedOrigins = (process.env.CORS_ORIGIN || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+// Always allow Vercel frontend(s)
+allowedOrigins.push("https://open-store-five.vercel.app");
+allowedOrigins.push("https://open-store.vercel.app");
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || ["https://open-store-five.vercel.app", "https://open-store.vercel.app"],
+  origin: allowedOrigins.length ? allowedOrigins : true,
   credentials: true,
 }));
 app.use(express.json({ limit: "2mb" }));
