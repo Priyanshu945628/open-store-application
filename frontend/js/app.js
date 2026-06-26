@@ -1987,7 +1987,7 @@ function renderAuth(mode = "login") {
         <button class="btn btn-primary" style="height:46px" onclick="submitAuth('${mode}')">${isLogin ? "Sign in" : "Create account"}</button>
         <div id="auth-error" class="muted" style="color:var(--danger);font-size:13px;text-align:center;min-height:16px"></div>
       </form>
-      <p class="muted" style="text-align:center;font-size:12px;margin-top:8px">${isLogin ? "New here? Create an account." : "Your account is backed up to Telegram for durability."}</p>
+      <p class="muted" style="text-align:center;font-size:12px;margin-top:8px">${isLogin ? "New here? Create an account." : ""}</p>
     </div>
   </div>`;
   const form = document.getElementById("auth-form");
