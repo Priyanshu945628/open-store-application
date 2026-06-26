@@ -20,7 +20,7 @@ import { nanoid } from "nanoid";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 import dotenv from "dotenv";
-dotenv.config({ path: path.join(__dirname, "..", ".env") });
+try { dotenv.config({ path: path.join(__dirname, "..", ".env") }); } catch {}
 
 import { TelegramClient } from "./telegram.js";
 
@@ -41,16 +41,17 @@ export class MemoryDataStore {
   }
 
   _load() {
-    if (!this.file || !fs.existsSync(this.file)) return;
+    if (!this.file) return;
     try {
+      if (!fs.existsSync(this.file)) return;
       const obj = JSON.parse(fs.readFileSync(this.file, "utf8"));
       for (const [table, rows] of Object.entries(obj)) {
         const m = new Map();
         for (const r of rows) m.set(r.id, r);
         this.tables.set(table, m);
       }
-    } catch (e) {
-      console.warn("Could not load data file:", e.message);
+    } catch {
+      // Silently ignore on Vercel (read-only filesystem)
     }
   }
 
@@ -63,8 +64,8 @@ export class MemoryDataStore {
         for (const [table, m] of this.tables) obj[table] = [...m.values()];
         fs.mkdirSync(path.dirname(this.file), { recursive: true });
         fs.writeFileSync(this.file, JSON.stringify(obj));
-      } catch (e) {
-        console.warn("Could not save data file:", e.message);
+      } catch {
+        // Silently ignore on Vercel (read-only filesystem)
       }
     }, 250);
   }

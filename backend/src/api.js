@@ -21,7 +21,7 @@ import { emitToUser, emitToConversation, isOnline, updatePresence } from "./real
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MEDIA_DIR = path.join(__dirname, "..", "data", "media");
-fs.mkdirSync(MEDIA_DIR, { recursive: true });
+try { fs.mkdirSync(MEDIA_DIR, { recursive: true }); } catch {}
 const EXT = {
   "video/mp4": "mp4",
   "video/webm": "webm",

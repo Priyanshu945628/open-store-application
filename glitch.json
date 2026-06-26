@@ -1,0 +1,14 @@
+{
+  "name": "open-store-backend",
+  "description": "Open Store backend — Telegram-powered social app",
+  "scripts": {
+    "start": "cd backend && node src/index.js"
+  },
+  "env": {
+    "JWT_SECRET": "CHANGE_ME_TO_RANDOM_STRING",
+    "TELEGRAM_BOT_TOKEN": "8688742231:AAGhKFuOSDnkF6S5VA2kWfk0IZD8W5ADFOY",
+    "TELEGRAM_DB_CHAT": "-1003989885988",
+    "TELEGRAM_MEDIA_CHAT": "-1003946176569",
+    "CORS_ORIGIN": "https://open-store-five.vercel.app,https://open-store.vercel.app"
+  }
+}
