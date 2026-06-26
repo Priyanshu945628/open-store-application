@@ -25,7 +25,10 @@ const storageMode =
 console.log(`  Storage: ${storageMode}`);
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || ["https://open-store-five.vercel.app", "https://open-store.vercel.app"],
+  credentials: true,
+}));
 app.use(express.json({ limit: "2mb" }));
 
 // Health + version
@@ -76,47 +79,53 @@ app.get("*", (req, res, next) => {
   res.sendFile(path.join(appDir, "index.html"));
 });
 
-const server = http.createServer(app);
-attachRealtime(server);
+// ── Export app for Vercel serverless ──────────────────────────────────────────
+export { app };
 
-// Scheduled-message dispatcher (signature: scheduled messages). Fires due messages.
-setInterval(() => {
-  const now = Date.now();
-  for (const m of db.query(
-    "messages",
-    (x) => x.scheduled && x.sendAt && new Date(x.sendAt).getTime() <= now,
-  )) {
-    const sent = db.put("messages", {
-      ...m,
-      scheduled: false,
-      sendAt: null,
-      status: "sent",
-      createdAt: new Date().toISOString(),
-    });
-    const c = db.get("conversations", m.conversationId);
-    if (c) db.put("conversations", { ...c, lastMessageAt: sent.createdAt });
-    emitToConversation(m.conversationId, "message:new", { message: sent });
-  }
-}, 5000).unref?.();
+// ── Start server (skip in Vercel serverless) ─────────────────────────────────
+if (!process.env.VERCEL) {
+  const server = http.createServer(app);
+  attachRealtime(server);
 
-server.on("error", (e) => {
-  if (e.code === "EADDRINUSE") {
-    console.error(
-      `\n  ⚠  Port ${PORT} is already in use — another Open Store server is still running.`,
-    );
-    console.error(`     Stop it first, e.g.  (Windows)  npx kill-port ${PORT}`);
-    console.error(
-      `     or set a different port:  set PORT=3002 && npm run dev\n`,
-    );
-    process.exit(1); // exit cleanly instead of crashing the watch loop with a stack trace
-  } else {
-    console.error(e);
-    process.exit(1);
-  }
-});
+  // Scheduled-message dispatcher (signature: scheduled messages). Fires due messages.
+  setInterval(() => {
+    const now = Date.now();
+    for (const m of db.query(
+      "messages",
+      (x) => x.scheduled && x.sendAt && new Date(x.sendAt).getTime() <= now,
+    )) {
+      const sent = db.put("messages", {
+        ...m,
+        scheduled: false,
+        sendAt: null,
+        status: "sent",
+        createdAt: new Date().toISOString(),
+      });
+      const c = db.get("conversations", m.conversationId);
+      if (c) db.put("conversations", { ...c, lastMessageAt: sent.createdAt });
+      emitToConversation(m.conversationId, "message:new", { message: sent });
+    }
+  }, 5000).unref?.();
 
-server.listen(PORT, () => {
-  console.log(`\n  Open Store running → http://localhost:${PORT}`);
-  console.log(`  REST   /api/v1   ·   WebSocket  /ws`);
-  console.log(`  Create a real account from the sign-up screen.\n`);
-});
+  server.on("error", (e) => {
+    if (e.code === "EADDRINUSE") {
+      console.error(
+        `\n  ⚠  Port ${PORT} is already in use — another Open Store server is still running.`,
+      );
+      console.error(`     Stop it first, e.g.  (Windows)  npx kill-port ${PORT}`);
+      console.error(
+        `     or set a different port:  set PORT=3002 && npm run dev\n`,
+      );
+      process.exit(1);
+    } else {
+      console.error(e);
+      process.exit(1);
+    }
+  });
+
+  server.listen(PORT, () => {
+    console.log(`\n  Open Store running → http://localhost:${PORT}`);
+    console.log(`  REST   /api/v1   ·   WebSocket  /ws`);
+    console.log(`  Create a real account from the sign-up screen.\n`);
+  });
+}
