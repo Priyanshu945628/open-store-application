@@ -17,7 +17,7 @@ import {
   search,
   DEFAULT_FEED_PREFS,
 } from "./algorithms.js";
-import { emitToUser, emitToConversation, isOnline } from "./realtime.js";
+import { emitToUser, emitToConversation, isOnline, updatePresence } from "./realtime.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MEDIA_DIR = path.join(__dirname, "..", "data", "media");
@@ -1090,6 +1090,67 @@ api.post("/admin/announce", requireAdmin, (req, res) => {
 
 // ---- small utilities -------------------------------------------------------
 const byNewest = (a, b) => new Date(b.createdAt) - new Date(a.createdAt);
+
+// ===========================================================================
+// POLLING ENDPOINTS (replace WebSocket for Vercel serverless)
+// ===========================================================================
+
+// Presence ping — client calls this every 25s to stay "online"
+api.post("/ping", requireAuth, (req, res) => {
+  updatePresence(req.user.id);
+  res.json({ ok: true });
+});
+
+// Poll messages in a conversation (newer than `after` ISO timestamp)
+api.get("/poll/messages", requireAuth, (req, res) => {
+  const { conversationId, after } = req.query;
+  if (!conversationId) return err(res, "missing", "conversationId required");
+  const c = db.get("conversations", conversationId);
+  if (!c || !c.memberIds.includes(req.user.id))
+    return err(res, "forbidden", "Not a member.", 403);
+  const afterTime = after ? new Date(after).getTime() : 0;
+  const messages = db
+    .query(
+      "messages",
+      (m) =>
+        m.conversationId === conversationId &&
+        (!after || new Date(m.createdAt).getTime() > afterTime),
+    )
+    .sort(byNewest)
+    .reverse()
+    .map((m) => ({
+      ...m,
+      sender: m.senderId ? authorOf(m.senderId) : null,
+    }));
+  res.json({ messages });
+});
+
+// Poll notifications (newer than `after` ISO timestamp)
+api.get("/poll/notifications", requireAuth, (req, res) => {
+  const { after } = req.query;
+  const afterTime = after ? new Date(after).getTime() : 0;
+  const all = db
+    .query("notifications", (n) => n.userId === req.user.id)
+    .filter((n) => !after || new Date(n.createdAt).getTime() > afterTime);
+  const unread = db
+    .query("notifications", (n) => n.userId === req.user.id && !n.read)
+    .length;
+  res.json({
+    notifications: all.sort(byNewest).map((n) => ({
+      ...n,
+      from: n.payload?.fromId ? authorOf(n.payload.fromId) : null,
+    })),
+    unread,
+  });
+});
+
+// Poll presence — check online status for a list of user IDs
+api.get("/poll/presence", requireAuth, (req, res) => {
+  const ids = (req.query.userIds || "").split(",").filter(Boolean);
+  const result = {};
+  for (const id of ids) result[id] = isOnline(id);
+  res.json({ presence: result });
+});
 
 function parsePrefs(src = {}) {
   const out = {};

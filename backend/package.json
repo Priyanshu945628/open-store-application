@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Open Store backend — Express API + WebSocket + swappable storage abstraction (Telegram-ready), serving the glass web app.",
+  "description": "Open Store backend — Express API + polling + swappable storage abstraction (Telegram-ready), serving the glass web app.",
   "main": "src/index.js",
   "scripts": {
     "dev": "node --watch src/index.js",
@@ -15,8 +15,7 @@
     "dotenv": "^17.4.2",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
-    "nanoid": "^5.0.7",
-    "ws": "^8.18.0"
+    "nanoid": "^5.0.7"
   },
   "engines": {
     "node": ">=18"

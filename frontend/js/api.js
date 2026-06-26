@@ -1,4 +1,4 @@
-// Open Store — client state, REST client, WebSocket, and offline mock fallback.
+// Open Store — client state, REST client, polling (no WebSocket).
 
 const _cfg = window.APP_CONFIG || {};
 const API_BASE = _cfg.API_URL
@@ -6,13 +6,6 @@ const API_BASE = _cfg.API_URL
   : location.protocol === "file:"
     ? "http://localhost:3001/api/v1"
     : location.origin + "/api/v1";
-const WS_BASE = _cfg.WS_URL
-  ? _cfg.WS_URL.replace(/\/+$/, "") + "/ws"
-  : location.protocol === "file:"
-    ? "ws://localhost:3001/ws"
-    : (location.protocol === "https:" ? "wss://" : "ws://") +
-      location.host +
-      "/ws";
 
 const state = {
   token: localStorage.getItem("os_token") || null,
@@ -26,10 +19,9 @@ const state = {
   },
   route: { name: "feed", params: {} },
   theme: localStorage.getItem("os_theme") || "dark",
-  ws: null,
-  wsHandlers: {},
   mock: false,
   unread: { chat: 0, notif: 0 },
+  _pollTimers: [],
 };
 
 // ---- REST ------------------------------------------------------------------
@@ -82,42 +74,103 @@ function mediaSrc(u) {
   return base + u;
 }
 
-// ---- WebSocket -------------------------------------------------------------
-function connectWS() {
+// ---- Polling (replaces WebSocket) ------------------------------------------
+function startPolling() {
   if (state.mock || !state.token) return;
+  stopPolling();
+  // Presence ping every 25s
+  state._pollTimers.push(
+    setInterval(() => api.post("/ping").catch(() => {}), 25000),
+  );
+  // Initial ping
+  api.post("/ping").catch(() => {});
+  // Notifications poll every 10s
+  state._pollTimers.push(
+    setInterval(() => pollNotifications(), 10000),
+  );
+  // Messages poll every 3s (only when in a conversation)
+  state._pollTimers.push(
+    setInterval(() => pollMessages(), 3000),
+  );
+  // Presence poll every 30s
+  state._pollTimers.push(
+    setInterval(() => pollPresence(), 30000),
+  );
+}
+function stopPolling() {
+  state._pollTimers.forEach(clearInterval);
+  state._pollTimers = [];
+}
+
+// Poll for new messages in the currently open conversation
+async function pollMessages() {
+  if (!state.openConvo || state.mock) return;
   try {
-    const ws = new WebSocket(
-      WS_BASE + "?token=" + encodeURIComponent(state.token),
+    const after = state._lastMsgTime || "";
+    const d = await api.get(
+      "/poll/messages?conversationId=" +
+        state.openConvo +
+        (after ? "&after=" + encodeURIComponent(after) : ""),
     );
-    state.ws = ws;
-    ws.onmessage = (e) => {
-      let msg;
-      try {
-        msg = JSON.parse(e.data);
-      } catch {
-        return;
+    if (d.messages && d.messages.length > 0) {
+      const box = document.getElementById("messages");
+      let hasNew = false;
+      for (const m of d.messages) {
+        if (box && !box.querySelector(`.msg-line[data-id="${m.id}"]`)) {
+          const e = box.querySelector(".empty");
+          if (e) e.remove();
+          box.insertAdjacentHTML("beforeend", bubble(m));
+          hasNew = true;
+          // Update last message time for next poll
+          if (!state._lastMsgTime || m.createdAt > state._lastMsgTime)
+            state._lastMsgTime = m.createdAt;
+          // Auto-read if not from self
+          if (m.senderId !== state.me.id) {
+            api.post("/conversations/" + state.openConvo + "/read").catch(() => {});
+          }
+          // Update chat list item
+          updateChatListItem(m.conversationId, m.text, m.createdAt);
+        }
       }
-      (state.wsHandlers[msg.type] || []).forEach((fn) => fn(msg.payload));
-    };
-    ws.onclose = () => {
-      state.ws = null;
-      if (!state.mock) setTimeout(connectWS, 2500);
-    };
-    ws.onerror = () => {};
-    setInterval(() => {
-      if (ws.readyState === 1)
-        ws.send(JSON.stringify({ type: "presence:ping" }));
-    }, 25000);
-  } catch {
-    /* ignore */
-  }
+      if (hasNew) scrollMessages();
+    }
+  } catch {}
 }
-function wsOn(type, fn) {
-  (state.wsHandlers[type] ||= []).push(fn);
+
+// Poll for new notifications
+async function pollNotifications() {
+  if (state.mock) return;
+  try {
+    const after = state._lastNotifTime || "";
+    const d = await api.get(
+      "/poll/notifications" + (after ? "?after=" + encodeURIComponent(after) : ""),
+    );
+    if (d.unread > state.unread.notif) {
+      state.unread.notif = d.unread;
+      refreshBadges();
+    }
+    if (d.notifications && d.notifications.length > 0) {
+      const newest = d.notifications[0];
+      if (!state._lastNotifTime || newest.createdAt > state._lastNotifTime)
+        state._lastNotifTime = newest.createdAt;
+    }
+  } catch {}
 }
-function wsSend(type, payload) {
-  if (state.ws && state.ws.readyState === 1)
-    state.ws.send(JSON.stringify({ type, payload }));
+
+// Poll for online presence
+async function pollPresence() {
+  if (state.mock || !state.openConvo) return;
+  try {
+    const convo = state._convoMembers;
+    if (!convo || convo.length === 0) return;
+    const ids = convo.map((m) => m.id).join(",");
+    const d = await api.get("/poll/presence?userIds=" + encodeURIComponent(ids));
+    const line = document.getElementById("presence-line");
+    if (line) {
+      const online = Object.values(d.presence || {}).some(Boolean);
+      line.textContent = online ? "online" : "offline";
+    }
+  } catch {}
 }
 
 // ---- Boot / auth -----------------------------------------------------------
@@ -129,7 +182,6 @@ async function boot() {
     const me = await api.get("/auth/me");
     state.me = me.user;
     state.feedPrefs = me.feedPrefs || state.feedPrefs;
-    connectWS();
     return "ok";
   } catch (e) {
     if (e.status === 401) {
@@ -147,14 +199,12 @@ async function login(handle, password) {
   state.token = d.token;
   localStorage.setItem("os_token", d.token);
   state.me = d.user;
-  connectWS();
 }
 async function signup(handle, name, password) {
   const d = await api.post("/auth/signup", { handle, name, password });
   state.token = d.token;
   localStorage.setItem("os_token", d.token);
   state.me = d.user;
-  connectWS();
 }
 
 // ---- Data helpers — all real, straight from the API ------------------------

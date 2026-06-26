@@ -1078,6 +1078,7 @@ async function startChat(userId) {
 // ---- Conversation view -----------------------------------------------------
 async function openConversation(id) {
   state.openConvo = id;
+  state._lastMsgTime = "";  // reset polling cursor
   const pane = document.getElementById("convo-pane");
   if (!pane) return;
   pane.innerHTML = `<div class="messages"><div class="skel" style="height:40px;width:60%"></div></div>`;
@@ -1088,9 +1089,10 @@ async function openConversation(id) {
     pane.innerHTML = `<div class="empty">${icon("chat")}<div>Could not open this chat</div></div>`;
     return;
   }
+  state._convoMembers = conversation.members || [];
+  state._lastMsgTime = messages.length ? messages[messages.length - 1].createdAt : "";
   try {
     await api.post("/conversations/" + id + "/read");
-    wsSend("read", { conversationId: id });
   } catch {}
   const headUser = {
     name: conversation.title || "Conversation",
@@ -1120,16 +1122,7 @@ async function openConversation(id) {
       sendMessage();
       return;
     }
-    wsSend("typing:start", { conversationId: id });
-    clearTimeout(typingTimer);
-    typingTimer = setTimeout(
-      () => wsSend("typing:stop", { conversationId: id }),
-      1500,
-    );
   });
-  input.addEventListener("blur", () =>
-    wsSend("typing:stop", { conversationId: id }),
-  );
   wireMessageGestures(pane.querySelector("#messages"));
 }
 const isTouch = () => matchMedia("(hover: none)").matches;
@@ -1293,12 +1286,7 @@ async function sendMessage() {
   const empty = box && box.querySelector(".empty");
   if (empty) empty.remove();
 
-  // Live path: WebSocket echoes the message back (renders once). No optimistic dupe.
-  if (!state.mock && state.ws && state.ws.readyState === 1) {
-    wsSend("message:send", { conversationId: id, text });
-    return;
-  }
-  // Fallback path (offline preview or no socket): render optimistically.
+  // Optimistic render
   const optimistic = {
     id: "tmp" + Date.now(),
     senderId: state.me.id,
@@ -1313,8 +1301,12 @@ async function sendMessage() {
   if (state.mock) return;
   try {
     const r = await api.post("/conversations/" + id + "/messages", { text });
-    const el = box && box.querySelector(`.bubble[data-id="${optimistic.id}"]`);
+    // Replace optimistic bubble with real one
+    const el = box && box.querySelector(`[data-id="${optimistic.id}"]`);
     if (el) el.setAttribute("data-id", r.message.id);
+    // Update last poll time so we don't re-poll this message
+    state._lastMsgTime = r.message.createdAt;
+    updateChatListItem(id, text, r.message.createdAt);
   } catch (e) {
     toast(e.message || "Could not send", "error");
   }
@@ -1907,80 +1899,8 @@ document.addEventListener("click", (e) => {
 });
 
 // ===========================================================================
-// Live WebSocket wiring (registered once)
+// Real-time helpers (polling replaces WebSocket)
 // ===========================================================================
-function wireRealtime() {
-  wsOn("message:new", (p) => {
-    const m = p.message;
-    if (m.conversationId === state.openConvo) {
-      const box = document.getElementById("messages");
-      if (box && !box.querySelector(`.msg-line[data-id="${m.id}"]`)) {
-        const e = box.querySelector(".empty");
-        if (e) e.remove();
-        box.insertAdjacentHTML("beforeend", bubble(m));
-        scrollMessages();
-      }
-      if (m.senderId !== state.me.id) {
-        wsSend("read", { conversationId: m.conversationId });
-        clearTyping();
-      }
-      // Update the chat list item's last message + time live
-      updateChatListItem(m.conversationId, m.text, m.createdAt);
-    } else if (m.senderId !== state.me.id) {
-      state.unread.chat++;
-      toast("New message from " + (m.sender?.name || "someone"));
-      // Update the chat list item live
-      updateChatListItem(m.conversationId, m.text, m.createdAt, true);
-      refreshBadges();
-      if (state.route.name === "chat" && !state.openConvo)
-        SCREENS.chat({ id: null });
-    }
-  });
-  wsOn("message:status", (p) => {
-    if (p.status === "read") {
-      document
-        .querySelectorAll("#messages .msg-line.out .tick")
-        .forEach(
-          (t) =>
-            (t.outerHTML = `<span class="tick read">${icon("checkCheck", "tick read")}</span>`),
-        );
-    }
-    // Update unread count in chat list when messages are read
-    if (p.conversationId && p.status === "read") {
-      const item = document.querySelector(`.chat-item[onclick*="${p.conversationId}"]`);
-      if (item) {
-        const pill = item.querySelector(".unread-pill");
-        if (pill) pill.remove();
-      }
-    }
-  });
-  wsOn("message:edit", (p) => {
-    if (p.id) applyMessageEdit(p.id, p.text);
-  });
-  wsOn("message:delete", (p) => {
-    document.querySelector(`.msg-line[data-id="${p.id}"]`)?.remove();
-  });
-  wsOn("typing", (p) => {
-    if (p.conversationId !== state.openConvo) return;
-    const el = document.getElementById("typing");
-    if (!el) return;
-    el.innerHTML = p.active
-      ? `typing <span class="typing-dots"><i></i><i></i><i></i></span>`
-      : "";
-    clearTimeout(state._typingTimer);
-    if (p.active) state._typingTimer = setTimeout(clearTyping, 4000);
-  });
-  wsOn("presence", (p) => {
-    const line = document.getElementById("presence-line");
-    if (line && state.openConvo)
-      line.textContent = p.online ? "online" : "offline";
-  });
-  wsOn("notification:new", () => {
-    state.unread.notif++;
-    refreshBadges();
-  });
-  wsOn("feed:update", () => {});
-}
 function clearTyping() {
   const el = document.getElementById("typing");
   if (el) el.innerHTML = "";
@@ -2123,7 +2043,7 @@ async function startApp() {
       0,
     );
   } catch {}
-  wireRealtime();
+  startPolling();
   render();
 }
 

@@ -1,8 +1,9 @@
 // Open Store — Server bootstrap
-// Express REST API + WebSocket gateway, serving the glass web app from ../app.
+// Express REST API + polling, serving the glass web app from ../frontend.
 // Run: `npm install && npm run dev`  →  http://localhost:3001
 
 import http from "http";
+import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import express from "express";
@@ -10,7 +11,7 @@ import cors from "cors";
 
 import { db, tgClient, tgConfig } from "./store.js";
 import { api } from "./api.js";
-import { attachRealtime, emitToConversation } from "./realtime.js";
+// realtime.js exports are no-ops in polling mode (no WebSocket server)
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -79,12 +80,14 @@ app.use((errr, _req, res, _next) => {
 });
 
 // Serve the frontend (single responsive web app) and SPA-fallback to index.html.
-const appDir = path.join(__dirname, "..", "..", "app");
-app.use(express.static(appDir));
-app.get("*", (req, res, next) => {
-  if (req.path.startsWith("/api")) return next();
-  res.sendFile(path.join(appDir, "index.html"));
-});
+const appDir = path.join(__dirname, "..", "..", "frontend");
+if (fs.existsSync(appDir)) {
+  app.use(express.static(appDir));
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api")) return next();
+    res.sendFile(path.join(appDir, "index.html"));
+  });
+}
 
 // ── Export app for Vercel serverless ──────────────────────────────────────────
 export { app };
@@ -92,9 +95,8 @@ export { app };
 // ── Start server (skip in Vercel serverless) ─────────────────────────────────
 if (!process.env.VERCEL) {
   const server = http.createServer(app);
-  attachRealtime(server);
 
-  // Scheduled-message dispatcher (signature: scheduled messages). Fires due messages.
+  // Scheduled-message dispatcher — fires due scheduled messages.
   setInterval(() => {
     const now = Date.now();
     for (const m of db.query(
@@ -110,7 +112,6 @@ if (!process.env.VERCEL) {
       });
       const c = db.get("conversations", m.conversationId);
       if (c) db.put("conversations", { ...c, lastMessageAt: sent.createdAt });
-      emitToConversation(m.conversationId, "message:new", { message: sent });
     }
   }, 5000).unref?.();
 
@@ -132,7 +133,7 @@ if (!process.env.VERCEL) {
 
   server.listen(PORT, () => {
     console.log(`\n  Open Store running → http://localhost:${PORT}`);
-    console.log(`  REST   /api/v1   ·   WebSocket  /ws`);
+    console.log(`  REST   /api/v1   ·   Polling mode (no WebSocket)`);
     console.log(`  Create a real account from the sign-up screen.\n`);
   });
 }
