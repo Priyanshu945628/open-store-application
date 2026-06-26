@@ -153,13 +153,12 @@ api.post("/auth/signup", (req, res) => {
   if (db.find("users", (u) => u.handle.toLowerCase() === handle.toLowerCase()))
     return err(res, "taken", "That handle is taken.");
   const hue = Math.floor(Math.random() * 360);
-  const firstUser = db.count("users") === 0; // the very first account owns the instance
   const user = db.put("users", {
     handle,
     name: name || handle,
     bio: "",
-    role: firstUser ? "owner" : "regular",
-    verified: firstUser,
+    role: "regular",
+    verified: false,
     isPrivate: false,
     avatarRef: { kind: "gradient", hue },
     bannerRef: { kind: "gradient", hue: (hue + 40) % 360 },
@@ -997,11 +996,13 @@ api.get("/bookmarks", requireAuth, (req, res) => {
 // ADMIN API — per ADMIN.md §4-5. Owner/admin role required on all routes.
 // Audit-logged; never publicly reachable (local-only admin panel connects here).
 // ===========================================================================
+const OWNER_HANDLE = (process.env.OWNER_HANDLE || "").toLowerCase().replace(/^@/, "");
 const requireAdmin = (req, res, next) =>
   requireAuth(req, res, () => {
-    if (!["owner", "admin"].includes(req.user?.role))
+    const isOwner = OWNER_HANDLE && req.user?.handle?.toLowerCase() === OWNER_HANDLE;
+    const isAdmin = ["owner", "admin"].includes(req.user?.role);
+    if (!isOwner && !isAdmin)
       return err(res, "forbidden", "Admin access required.", 403);
-    // Audit log every admin action
     db.put("admin_audit", {
       adminId: req.user.id,
       action: `${req.method} ${req.path}`,

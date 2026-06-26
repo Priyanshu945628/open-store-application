@@ -63,7 +63,6 @@ function sidebarHTML() {
     <a href="#/explore" class="${isActive("explore") ? "active" : ""}">${icon("search")}<span>Explore</span></a>
     <a href="#/connections" class="${isActive("connections") ? "active" : ""}">${icon("users")}<span>Connections</span></a>
     <a href="#/settings" class="${isActive("settings") ? "active" : ""}">${icon("settings")}<span>Settings</span></a>
-    ${["owner", "admin"].includes(state.me?.role) ? `<a href="#/admin" class="${isActive("admin") ? "active" : ""}" style="color:var(--warn)">${icon("shield")}<span>Admin</span></a>` : ""}
     <button class="btn btn-primary" onclick="openComposer()">${icon("plus")} Create</button>
     <a href="#/u/${state.me?.handle}" class="me row" style="margin-top:auto">${avatar(state.me, 40)}<div><div class="name">${esc(state.me?.name || "")}</div><div class="handle">@${esc(state.me?.handle || "")}</div></div></a>
   </aside>`;
@@ -1988,7 +1987,7 @@ function renderAuth(mode = "login") {
         <button class="btn btn-primary" style="height:46px" onclick="submitAuth('${mode}')">${isLogin ? "Sign in" : "Create account"}</button>
         <div id="auth-error" class="muted" style="color:var(--danger);font-size:13px;text-align:center;min-height:16px"></div>
       </form>
-      <p class="muted" style="text-align:center;font-size:12px;margin-top:8px">${isLogin ? "New here? Create an account — the first account owns this instance." : "Your account and content are stored locally and persist across restarts."}</p>
+      <p class="muted" style="text-align:center;font-size:12px;margin-top:8px">${isLogin ? "New here? Create an account." : "Your account is backed up to Telegram for durability."}</p>
     </div>
   </div>`;
   const form = document.getElementById("auth-form");
