@@ -386,6 +386,18 @@ const SCREENS = {
       go("#/");
       return toast("Access denied", "error");
     }
+    if (window.innerWidth <= 768) {
+      renderShell(
+        `<div class="container" style="padding:40px 20px;text-align:center">
+          <div style="font-size:48px;margin-bottom:16px">${icon("shield", "icon")}</div>
+          <div style="font-size:18px;font-weight:600;margin-bottom:8px">Admin Panel</div>
+          <div class="muted" style="font-size:14px;margin-bottom:20px">Access from a desktop browser to manage users, view analytics, and configure your instance.</div>
+          <button class="btn btn-primary" onclick="go('#/')">Back to Feed</button>
+        </div>`,
+        "Admin",
+      );
+      return;
+    }
     renderShell(
       `<div class="container"><div class="page-title">${icon("shield", "icon sm")} Admin Panel</div>${skeletonList(3)}</div>`,
       "Admin",

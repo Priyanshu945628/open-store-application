@@ -26,23 +26,19 @@ const storageMode =
 console.log(`  Storage: ${storageMode}`);
 
 const app = express();
-const allowedOrigins = (process.env.CORS_ORIGIN || "")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
-// Always allow all Vercel frontend(s)
-allowedOrigins.push("https://open-store-five.vercel.app");
-allowedOrigins.push("https://open-store-two.vercel.app");
-allowedOrigins.push("https://open-store.vercel.app");
-app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin) return cb(null, true);
-    if (allowedOrigins.some(o => origin.startsWith(o))) return cb(null, true);
-    if (origin.endsWith(".vercel.app")) return cb(null, true);
-    cb(null, allowedOrigins.length ? false : true);
-  },
-  credentials: true,
-}));
+// CORS is handled at the api/index.js handler level (Vercel serverless)
+// Only apply Express CORS for local development
+if (!process.env.VERCEL) {
+  const allowedOrigins = (process.env.CORS_ORIGIN || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  allowedOrigins.push("http://localhost:3001");
+  app.use(cors({
+    origin: allowedOrigins.length ? allowedOrigins : true,
+    credentials: true,
+  }));
+}
 app.use(express.json({ limit: "2mb" }));
 
 // Health + version
