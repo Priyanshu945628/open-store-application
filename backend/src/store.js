@@ -264,6 +264,69 @@ export class TelegramMediaStore extends MemoryMediaStore {
 }
 
 // ===========================================================================
+// HybridMediaStore — small files (images, thumbnails, < 5MB) → Supabase
+//                    large files (videos, shorts, ≥ 5MB) → Telegram
+// ===========================================================================
+const MEDIA_SIZE_THRESHOLD = 5 * 1024 * 1024; // 5MB
+
+export class HybridMediaStore extends MemoryMediaStore {
+  /**
+   * @param {SupabaseDataStore} supa  Supabase store instance
+   * @param {TelegramMediaStore|null} tgMedia  Telegram media store (for large files)
+   */
+  constructor(supa, tgMedia) {
+    super();
+    this.supa = supa;
+    this.tg = tgMedia;
+  }
+
+  async putBlobRemote(buffer, meta = {}, filename = "blob", mimeType = "application/octet-stream") {
+    if (buffer.length >= MEDIA_SIZE_THRESHOLD && this.tg) {
+      console.log(`[Media] ${filename} (${(buffer.length / 1048576).toFixed(1)}MB) → Telegram`);
+      return this.tg.putBlobRemote(buffer, meta, filename, mimeType);
+    }
+    const fileId = `sb_${nanoid(16)}`;
+    const b64 = buffer.toString('base64');
+    const record = { id: fileId, _media: true, b64, mimeType, filename, size: buffer.length, ...meta };
+    this.blobs.set(fileId, { bytes: buffer, meta: record });
+    if (this.supa?.client) {
+      try {
+        await this.supa.client.from('records').upsert({
+          id: fileId, table: '_media', data: record,
+          createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+        }, { onConflict: 'id' });
+      } catch (e) {
+        console.warn(`[Media] Supabase save ${filename}:`, e.message);
+      }
+    }
+    console.log(`[Media] ${filename} (${(buffer.length / 1024).toFixed(0)}KB) → Supabase`);
+    return { fileId, ...meta, mimeType, filename };
+  }
+
+  async getBlobRemote(fileId) {
+    const rec = this.blobs.get(fileId);
+    if (rec?.bytes) return rec.bytes;
+
+    if (fileId?.startsWith('sb_') && this.supa?.client) {
+      try {
+        const { data } = await this.supa.client.from('records').select('data').eq('id', fileId).single();
+        if (data?.data?.b64) {
+          const buf = Buffer.from(data.data.b64, 'base64');
+          this.blobs.set(fileId, { bytes: buf, meta: data.data });
+          return buf;
+        }
+      } catch (e) {
+        console.warn(`[Media] Supabase load ${fileId}:`, e.message);
+      }
+      return null;
+    }
+
+    if (this.tg) return this.tg.getBlobRemote(fileId);
+    return null;
+  }
+}
+
+// ===========================================================================
 // Singletons — auto-selects storage backend based on env vars:
 //
 //   1. SUPABASE_URL + SUPABASE_KEY  → Supabase (survives Vercel cold starts)
@@ -288,15 +351,19 @@ if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
   }
 }
 
-// Telegram media store (used for blob storage regardless of DB backend)
+// Telegram media store (used for large blob storage)
 if (_token && _mediaChat) {
   try {
     const client = new TelegramClient(_token);
-    _media = new TelegramMediaStore(client, _mediaChat);
+    const tgMedia = new TelegramMediaStore(client, _mediaChat);
     // Also use Telegram for DB if Supabase isn't available
     if (!_db) {
       _db = new TelegramDataStore(client, _dbChat);
     }
+    // Hybrid: small → Supabase, large → Telegram
+    _media = _db instanceof SupabaseDataStore
+      ? new HybridMediaStore(_db, tgMedia)
+      : tgMedia;
     client
       .getMe()
       .then(async (bot) => {
