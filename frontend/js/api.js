@@ -1,11 +1,14 @@
 // Open Store — client state, REST client, WebSocket, and offline mock fallback.
 
-const API_BASE =
-  location.protocol === "file:"
+const _cfg = window.APP_CONFIG || {};
+const API_BASE = _cfg.API_URL
+  ? _cfg.API_URL.replace(/\/+$/, "") + "/api/v1"
+  : location.protocol === "file:"
     ? "http://localhost:3001/api/v1"
     : location.origin + "/api/v1";
-const WS_BASE =
-  location.protocol === "file:"
+const WS_BASE = _cfg.WS_URL
+  ? _cfg.WS_URL.replace(/\/+$/, "") + "/ws"
+  : location.protocol === "file:"
     ? "ws://localhost:3001/ws"
     : (location.protocol === "https:" ? "wss://" : "ws://") +
       location.host +
@@ -70,9 +73,13 @@ async function uploadFile(file) {
 // Resolve a server media path to an absolute URL (handles file:// preview).
 function mediaSrc(u) {
   if (!u) return "";
-  return u.startsWith("/")
-    ? (location.protocol === "file:" ? "http://localhost:3001" : "") + u
-    : u;
+  if (u.startsWith("http")) return u;
+  const base = _cfg.API_URL
+    ? _cfg.API_URL.replace(/\/+$/, "")
+    : location.protocol === "file:"
+      ? "http://localhost:3001"
+      : location.origin;
+  return base + u;
 }
 
 // ---- WebSocket -------------------------------------------------------------
