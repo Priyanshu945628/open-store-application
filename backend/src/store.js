@@ -23,6 +23,7 @@ import dotenv from "dotenv";
 try { dotenv.config({ path: path.join(__dirname, "..", ".env") }); } catch {}
 
 import { TelegramClient } from "./telegram.js";
+import { SupabaseDataStore } from "./supabase-store.js";
 
 const DATA_FILE = path.join(__dirname, "..", "data", "db.json");
 
@@ -263,15 +264,11 @@ export class TelegramMediaStore extends MemoryMediaStore {
 }
 
 // ===========================================================================
-// Singletons — automatically uses Telegram stores when env vars are present;
-// falls back to in-memory mode (zero-config) when they are not.
+// Singletons — auto-selects storage backend based on env vars:
 //
-// Required env vars to enable Telegram persistence:
-//   TELEGRAM_BOT_TOKEN   — your bot token from @BotFather
-//   TELEGRAM_DB_CHAT     — numeric ID of your private DB channel
-// Optional:
-//   TELEGRAM_MEDIA_CHAT  — numeric ID of your private media channel
-//                          (defaults to TELEGRAM_DB_CHAT if not set)
+//   1. SUPABASE_URL + SUPABASE_KEY  → Supabase (survives Vercel cold starts)
+//   2. TELEGRAM_BOT_TOKEN + TELEGRAM_DB_CHAT → Telegram write-through
+//   3. Neither → in-memory (zero-config dev mode)
 // ===========================================================================
 const _token = process.env.TELEGRAM_BOT_TOKEN?.trim();
 const _dbChat = process.env.TELEGRAM_DB_CHAT?.trim();
@@ -281,44 +278,49 @@ const _mediaChat = (
 
 let _db, _media;
 
-if (_token && _dbChat) {
+// Priority 1: Supabase (persistent across Vercel cold starts)
+if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
+  try {
+    _db = new SupabaseDataStore();
+    console.log(`  ✦ Supabase storage active — ${process.env.SUPABASE_URL}`);
+  } catch (e) {
+    console.warn("  ⚠ Supabase init error:", e.message, "— trying Telegram fallback");
+  }
+}
+
+// Telegram media store (used for blob storage regardless of DB backend)
+if (_token && _mediaChat) {
   try {
     const client = new TelegramClient(_token);
-    _db = new TelegramDataStore(client, _dbChat);
     _media = new TelegramMediaStore(client, _mediaChat);
-    // Async verification — non-blocking; server starts even if TG is temporarily offline
+    // Also use Telegram for DB if Supabase isn't available
+    if (!_db) {
+      _db = new TelegramDataStore(client, _dbChat);
+    }
     client
       .getMe()
       .then(async (bot) => {
-        console.log(`  ✦ Telegram storage active — @${bot.username}`);
+        console.log(`  ✦ Telegram active — @${bot.username}`);
         for (const [label, cid] of [["DB", _dbChat], ["Media", _mediaChat]]) {
           try {
             const info = await client.call("getChat", { chat_id: cid });
             console.log(`    ✓ ${label} channel accessible: ${info.title || cid}`);
           } catch (e) {
             console.warn(`    ✗ ${label} channel (${cid}): ${e.message}`);
-            console.warn(`      → Add @${bot.username} as Admin with "Post Messages" in that channel, then restart.`);
           }
         }
       })
       .catch((e) =>
-        console.warn(
-          `  ⚠ Telegram bot check failed: ${e.message} (writes will retry)`,
-        ),
+        console.warn(`  ⚠ Telegram bot check failed: ${e.message}`),
       );
   } catch (e) {
-    console.warn(
-      "  ⚠ Telegram init error:",
-      e.message,
-      "— falling back to in-memory store",
-    );
-    _db = new MemoryDataStore();
-    _media = new MemoryMediaStore();
+    console.warn("  ⚠ Telegram init error:", e.message);
   }
-} else {
-  _db = new MemoryDataStore();
-  _media = new MemoryMediaStore();
 }
+
+// Fallback: in-memory (local dev, no env vars)
+if (!_db) _db = new MemoryDataStore();
+if (!_media) _media = new MemoryMediaStore();
 
 export const db = _db;
 export const media = _media;

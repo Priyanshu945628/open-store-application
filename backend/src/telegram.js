@@ -129,6 +129,54 @@ export class TelegramClient {
   /** Verify the bot token is valid. Returns the bot User object. */
   async getMe() { return this.call('getMe'); }
 
+  // ── History recovery (for Vercel cold starts) ──────────────────────────────
+
+  /**
+   * Fetch ALL messages from a channel using getUpdates with offset pagination.
+   * Used on cold start to rebuild the in-memory index from Telegram.
+   * Returns array of parsed JSON records.
+   */
+  async fetchChannelHistory(chatId, limit = 100) {
+    const records = [];
+    let offset = 0;
+    const targetId = String(chatId);
+    // Keep fetching until we've exhausted all updates
+    for (let round = 0; round < 50; round++) { // safety cap
+      try {
+        const updates = await this.call('getUpdates', {
+          offset,
+          limit,
+          allowed_updates: ['message'],
+        });
+        if (!updates || updates.length === 0) break;
+        for (const u of updates) {
+          offset = u.update_id + 1;
+          const msg = u.message;
+          if (!msg || String(msg.chat?.id) !== targetId) continue;
+          // Message might be text (inline JSON) or a document (large JSON)
+          if (msg.text) {
+            try {
+              const rec = JSON.parse(msg.text);
+              if (rec && rec.id) records.push(rec);
+            } catch {}
+          }
+          if (msg.document?.file_name === 'record.json' && msg.document?.file_id) {
+            try {
+              const buf = await this.downloadFile(msg.document.file_id);
+              const rec = JSON.parse(buf.toString('utf8'));
+              if (rec && rec.id) records.push(rec);
+            } catch {}
+          }
+        }
+        if (updates.length < limit) break; // no more updates
+      } catch (e) {
+        console.warn(`[TG] fetchChannelHistory round ${round}:`, e.message);
+        break;
+      }
+    }
+    return records;
+  }
+
   // ── Internal ───────────────────────────────────────────────────────────────
 
   async _sendDoc(chatId, buffer, filename, mimeType, returnFileId = false) {
