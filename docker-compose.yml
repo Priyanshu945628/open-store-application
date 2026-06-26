@@ -1,0 +1,13 @@
+version: "1"
+
+services:
+  open-store-backend:
+    image: node:20-alpine
+    build:
+      context: backend
+      dockerfile: Dockerfile
+    env:
+      - NODE_ENV=production
+      - PORT=3001
+    ports:
+      - "3001:3001"
