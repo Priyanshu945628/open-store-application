@@ -7,15 +7,8 @@ frontend/node_modules/
 .env
 backend/.env
 
-# SQLite local databases
-*.sqlite
-*.sqlite-journal
-backend/database.sqlite
-backend/database.sqlite-journal
-
-# Mock local storage
-mock-github-storage/
-backend/mock-github-storage/
+# Server data (runtime DB)
+backend/data/
 
 # Vercel configuration files
 .vercel/
@@ -23,3 +16,4 @@ backend/mock-github-storage/
 # OS metadata
 .DS_Store
 Thumbs.db
+server.log

@@ -1,21 +1,24 @@
 {
-  "name": "open-store-backend",
+  "name": "open-store-server",
   "version": "1.0.0",
-  "description": "Backend server for Open Store with custom encryption and chunk streaming",
-  "main": "server.js",
+  "private": true,
   "type": "module",
+  "description": "Open Store backend — Express API + WebSocket + swappable storage abstraction (Telegram-ready), serving the glass web app.",
+  "main": "src/index.js",
   "scripts": {
-    "start": "node server.js",
-    "test": "node test-crypto.js"
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js"
   },
   "dependencies": {
+    "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
+    "dotenv": "^17.4.2",
     "express": "^4.19.2",
-    "form-data": "^4.0.6",
-    "multer": "^1.4.5-lts.1",
-    "node-fetch": "^3.3.2",
-    "sqlite": "^5.1.1",
-    "sqlite3": "^5.1.7"
+    "jsonwebtoken": "^9.0.2",
+    "nanoid": "^5.0.7",
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
